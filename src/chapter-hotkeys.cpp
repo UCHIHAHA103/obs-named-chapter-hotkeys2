@@ -10,6 +10,13 @@
 #include <QScreen>
 #include <QRect>
 #include <QGuiApplication>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QFile>
+#include <QDir>
+#include <QStandardPaths>
+#include <QRegularExpression>
 
 using namespace std;
 
@@ -56,8 +63,13 @@ QStringList ChapterHotkeyUI::GetAllChapterNames()
 		for (int i = 0; i < hk_edit->ui->listWidget->count(); i++) {
 			auto item = hk_edit->ui->listWidget->item(i);
 			QString name = item->data(Name).toString();
+			QString color = item->data(Color).toString();
 			if (!name.isEmpty()) {
-				names.append(name);
+				QString displayName = name;
+				if (!color.isEmpty() && color != "none") {
+					displayName = QString("(%1) %2").arg(color).arg(name);
+				}
+				names.append(displayName);
 			}
 		}
 	}
@@ -75,7 +87,7 @@ void ChapterHotkeyUI::on_actionAddHotkey_triggered()
 	auto uuid = QUuid::createUuid();
 	QString id = "chapter_hotkey_" + uuid.toString(QUuid::WithoutBraces);
 
-	auto item = new ChapterHotkeyItem(id, name.c_str(), nullptr);
+	auto item = new ChapterHotkeyItem(id, name.c_str(), nullptr, "green");
 	ui->listWidget->addItem(item);
 	ui->listWidget->sortItems();
 }
@@ -98,6 +110,116 @@ void ChapterHotkeyUI::on_actionRenameHotkey_triggered()
 	ui->listWidget->sortItems();
 }
 
+void ChapterHotkeyUI::on_colorButtonGreen_clicked() { setSelectedItemColor("green"); }
+void ChapterHotkeyUI::on_colorButtonRed_clicked() { setSelectedItemColor("red"); }
+void ChapterHotkeyUI::on_colorButtonPurple_clicked() { setSelectedItemColor("purple"); }
+void ChapterHotkeyUI::on_colorButtonOrange_clicked() { setSelectedItemColor("orange"); }
+void ChapterHotkeyUI::on_colorButtonYellow_clicked() { setSelectedItemColor("yellow"); }
+void ChapterHotkeyUI::on_colorButtonWhite_clicked() { setSelectedItemColor("white"); }
+void ChapterHotkeyUI::on_colorButtonBlue_clicked() { setSelectedItemColor("blue"); }
+void ChapterHotkeyUI::on_colorButtonCyan_clicked() { setSelectedItemColor("cyan"); }
+
+void ChapterHotkeyUI::setSelectedItemColor(const QString &color)
+{
+	auto item = ui->listWidget->currentItem();
+	if (item) {
+		item->setData(Color, color);
+		ui->listWidget->sortItems();
+	}
+}
+
+QString ChapterHotkeyUI::getExternalConfigPath()
+{
+	QString userProfile = qgetenv("USERPROFILE");
+	if (userProfile.isEmpty()) {
+		userProfile = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+	}
+	QDir dataDir(userProfile + "/VideoMarkerExtractor_Data");
+	if (!dataDir.exists()) {
+		dataDir.mkpath(".");
+	}
+	return dataDir.filePath("chapter-markers-config.json");
+}
+
+void ChapterHotkeyUI::saveToExternalConfig()
+{
+	QJsonArray markersArray;
+	
+	for (int i = 0; i < ui->listWidget->count(); i++) {
+		auto item = ui->listWidget->item(i);
+		
+		auto name = item->data(Name).toString();
+		auto uuid = item->data(HotkeyId).toString();
+		auto color = item->data(Color).toString();
+		OBSDataArrayAutoRelease bindings =
+			static_cast<obs_data_array_t *>(
+				item->data(Bindings).value<void *>());
+		
+		// 转换bindings为JSON数组
+		QJsonArray bindingsArray;
+		if (bindings) {
+			size_t count = obs_data_array_count(bindings);
+			for (size_t j = 0; j < count; j++) {
+				OBSDataAutoRelease binding = obs_data_array_item(bindings, j);
+				// 简化：保存为字符串表示
+				const char *desc = obs_data_get_json(binding);
+				if (desc) {
+					bindingsArray.append(QString::fromUtf8(desc));
+				}
+			}
+		}
+		
+		QJsonObject markerObj;
+		markerObj["name"] = name;
+		markerObj["uuid"] = uuid;
+		markerObj["color"] = color;
+		markerObj["bindings"] = bindingsArray;
+		
+		markersArray.append(markerObj);
+	}
+	
+	QJsonObject configObj;
+	configObj["version"] = "1.0";
+	configObj["markers"] = markersArray;
+	
+	QJsonDocument doc(configObj);
+	QFile configFile(getExternalConfigPath());
+	if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+		configFile.write(doc.toJson(QJsonDocument::Indented));
+		configFile.close();
+	}
+}
+
+void ChapterHotkeyUI::loadFromExternalConfig()
+{
+	QFile configFile(getExternalConfigPath());
+	if (!configFile.exists()) {
+		return;
+	}
+	
+	if (!configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+		return;
+	}
+	
+	QByteArray data = configFile.readAll();
+	configFile.close();
+	
+	QJsonDocument doc = QJsonDocument::fromJson(data);
+	if (doc.isNull() || !doc.isObject()) {
+		return;
+	}
+	
+	QJsonObject configObj = doc.object();
+	if (configObj["version"].toString() != "1.0") {
+		return;
+	}
+	
+	QJsonArray markersArray = configObj["markers"].toArray();
+	
+	// 注意：这里不直接加载到UI，因为OBS配置是主配置源
+	// 外部配置主要用于PR插件读取，OBS配置是权威源
+}
+
 void ChapterHotkeyUI::LoadHotkeys(obs_data_t *data)
 {
 	ui->listWidget->clear();
@@ -109,10 +231,11 @@ void ChapterHotkeyUI::LoadHotkeys(obs_data_t *data)
 		OBSDataAutoRelease hk = obs_data_item_get_obj(item);
 
 		const char *name = obs_data_get_string(hk, "name");
+		const char *color = obs_data_get_string(hk, "color");
 		OBSDataArrayAutoRelease bindings =
 			obs_data_get_array(hk, "bindings");
 
-		auto hkItem = new ChapterHotkeyItem(id, name, bindings);
+		auto hkItem = new ChapterHotkeyItem(id, name, bindings, color ? color : "green");
 		ui->listWidget->addItem(hkItem);
 
 		obs_data_item_next(&item);
@@ -130,22 +253,28 @@ void ChapterHotkeyUI::SaveHotkeys(obs_data_t *data)
 
 		auto name = item->data(Name).toString();
 		auto uuid = item->data(HotkeyId).toString();
+		auto color = item->data(Color).toString();
 		OBSDataArrayAutoRelease bindings =
 			static_cast<obs_data_array_t *>(
 				item->data(Bindings).value<void *>());
 
 		OBSDataAutoRelease hk = obs_data_create();
 		obs_data_set_string(hk, "name", name.toUtf8().constData());
+		obs_data_set_string(hk, "color", color.toUtf8().constData());
 		obs_data_set_array(hk, "bindings", bindings);
 		obs_data_set_obj(data, uuid.toUtf8().constData(), hk);
 	}
+	
+	// 同时保存到外部配置文件供PR插件读取
+	saveToExternalConfig();
 }
 
 ChapterHotkeyItem::ChapterHotkeyItem(const QString &id, const char *name,
-				     obs_data_array_t *bindings)
+				     obs_data_array_t *bindings, const QString &color)
 	: QListWidgetItem(nullptr),
 	  chapterName(name),
-	  hotkeyUUID(id)
+	  hotkeyUUID(id),
+	  color(color)
 {
 	setText(name);
 
@@ -157,11 +286,23 @@ ChapterHotkeyItem::ChapterHotkeyItem(const QString &id, const char *name,
 
 	if (bindings)
 		obs_hotkey_load(hotkey, bindings);
+	
+	updateDisplayText();
 }
 
 ChapterHotkeyItem::~ChapterHotkeyItem()
 {
 	obs_hotkey_unregister(hotkey);
+}
+
+void ChapterHotkeyItem::updateDisplayText()
+{
+	QString displayText = QString::fromStdString(chapterName);
+	if (!color.isEmpty() && color != "none") {
+		// 添加颜色前缀
+		displayText = QString("(%1) %2").arg(color).arg(displayText);
+	}
+	setText(displayText);
 }
 
 void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
@@ -188,10 +329,19 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 				if (!commentInput.empty()) {
 					finalChapterName = nameInput + "@" + commentInput;
 				}
+				// 添加颜色前缀
+				if (!hk->color.isEmpty() && hk->color != "none") {
+					finalChapterName = "(" + hk->color.toStdString() + ") " + finalChapterName;
+				}
 				obs_frontend_recording_add_chapter(finalChapterName.c_str());
 			}
 		} else {
-			obs_frontend_recording_add_chapter(hk->chapterName.c_str());
+			string finalChapterName = hk->chapterName;
+			// 添加颜色前缀
+			if (!hk->color.isEmpty() && hk->color != "none") {
+				finalChapterName = "(" + hk->color.toStdString() + ") " + finalChapterName;
+			}
+			obs_frontend_recording_add_chapter(finalChapterName.c_str());
 		}
 	}
 }
@@ -206,6 +356,8 @@ QVariant ChapterHotkeyItem::data(int role) const
 		obs_data_array_t *hk = obs_hotkey_save(hotkey);
 		return QVariant::fromValue(static_cast<void *>(hk));
 	}
+	if (role == Color)
+		return color;
 
 	return QListWidgetItem::data(role);
 }
@@ -220,7 +372,12 @@ void ChapterHotkeyItem::setData(int role, const QVariant &value)
 		obs_hotkey_set_description(hotkey,
 					   formattedName.toUtf8().constData());
 
-		setText(newName);
+		// 更新显示文本，包含颜色前缀
+		updateDisplayText();
+	} else if (role == Color) {
+		color = value.toString();
+		// 更新显示文本，包含颜色前缀
+		updateDisplayText();
 	} else {
 		QListWidgetItem::setData(role, value);
 	}
@@ -284,10 +441,30 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 
 	dialog.label->setText(text);
 	
-	QStringList allNames = ChapterHotkeyUI::GetAllChapterNames();
-	dialog.nameCombo->addItems(allNames);
+	// 添加带颜色前缀的标记名称到下拉框
+	if (hk_edit) {
+		for (int i = 0; i < hk_edit->ui->listWidget->count(); i++) {
+			auto item = hk_edit->ui->listWidget->item(i);
+			QString name = item->data(Name).toString();
+			QString color = item->data(Color).toString();
+			if (!name.isEmpty()) {
+				QString displayName = name;
+				if (!color.isEmpty() && color != "none") {
+					displayName = QString("(%1) %2").arg(color).arg(name);
+				}
+				dialog.nameCombo->addItem(displayName, name); // 设置原始名称为项数据
+			}
+		}
+	}
 	
-	int index = dialog.nameCombo->findText(placeHolder);
+	// 查找匹配的占位符（原始名称）
+	int index = -1;
+	for (int i = 0; i < dialog.nameCombo->count(); i++) {
+		if (dialog.nameCombo->itemData(i).toString() == placeHolder) {
+			index = i;
+			break;
+		}
+	}
 	if (index >= 0) {
 		dialog.nameCombo->setCurrentIndex(index);
 	}
@@ -315,7 +492,15 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 		return false;
 	}
 
-	nameInput = dialog.nameCombo->currentText().toUtf8().constData();
+	// 获取原始名称（从项数据），如果项数据为空则使用显示文本
+	QString selectedName = dialog.nameCombo->currentData().toString();
+	if (selectedName.isEmpty()) {
+		selectedName = dialog.nameCombo->currentText();
+		// 尝试移除颜色前缀
+		QRegularExpression colorPattern("\\((?<color>green|red|purple|orange|yellow|white|blue|cyan)\\)\\s*");
+		selectedName.remove(colorPattern);
+	}
+	nameInput = selectedName.toUtf8().constData();
 	commentInput = dialog.commentInput->text().toUtf8().constData();
 	CleanWhitespace(nameInput);
 	CleanWhitespace(commentInput);

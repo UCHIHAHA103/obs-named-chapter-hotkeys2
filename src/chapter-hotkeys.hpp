@@ -42,24 +42,42 @@ private slots:
 	void on_actionAddHotkey_triggered();
 	void on_actionRemoveHotkey_triggered();
 	void on_actionRenameHotkey_triggered();
+	void on_colorButtonGreen_clicked();
+	void on_colorButtonRed_clicked();
+	void on_colorButtonPurple_clicked();
+	void on_colorButtonOrange_clicked();
+	void on_colorButtonYellow_clicked();
+	void on_colorButtonWhite_clicked();
+	void on_colorButtonBlue_clicked();
+	void on_colorButtonCyan_clicked();
+
+private:
+	void setSelectedItemColor(const QString &color);
+	void saveToExternalConfig();
+	void loadFromExternalConfig();
+	QString getExternalConfigPath();
 };
 
-enum HotkeyDataRoles { Name = Qt::UserRole, HotkeyId, Bindings };
+enum HotkeyDataRoles { Name = Qt::UserRole, HotkeyId, Bindings, Color };
 
 class ChapterHotkeyItem : public QListWidgetItem {
 
 public:
 	ChapterHotkeyItem(const QString &id, const char *name,
-			  obs_data_array_t *bindings);
+			  obs_data_array_t *bindings, const QString &color = "green");
 	~ChapterHotkeyItem() override;
 
 	QVariant data(int role) const override;
 	void setData(int role, const QVariant &value) override;
 
 private:
+	void updateDisplayText();
+
+private:
 	obs_hotkey_id hotkey;
 	std::string chapterName;
 	QString hotkeyUUID;
+	QString color;
 
 	static void HotkeyPressed(void *_this, obs_hotkey_id, obs_hotkey_t *,
 				  bool pressed);
