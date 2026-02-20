@@ -20,8 +20,47 @@
 #include <QColor>
 #include <QPixmap>
 #include <QPainter>
+#include <QMap>
 
 using namespace std;
+
+static QMap<QString, QString> createColorMap()
+{
+	QMap<QString, QString> map;
+	map["#718637"] = "green";
+	map["#D22C36"] = "red";
+	map["#AF8BB1"] = "purple";
+	map["#E96F24"] = "orange";
+	map["#D0A12B"] = "yellow";
+	map["#FFFFFF"] = "white";
+	map["#428DFC"] = "blue";
+	map["#19F4D6"] = "cyan";
+	map["green"] = "green";
+	map["red"] = "red";
+	map["purple"] = "purple";
+	map["orange"] = "orange";
+	map["yellow"] = "yellow";
+	map["white"] = "white";
+	map["blue"] = "blue";
+	map["cyan"] = "cyan";
+	return map;
+}
+
+static QString getColorName(const QString &colorHex)
+{
+	static QMap<QString, QString> colorMap = createColorMap();
+	return colorMap.value(colorHex.toLower(), "green");
+}
+
+static QColor getColorFromHex(const QString &colorNameOrHex)
+{
+	static QMap<QString, QString> colorMap = createColorMap();
+	QString hex = colorMap.value(colorNameOrHex.toLower(), colorNameOrHex);
+	if (!hex.startsWith("#")) {
+		hex = colorMap.value(hex, "#718637");
+	}
+	return QColor(hex);
+}
 
 ChapterHotkeyUI *hk_edit;
 bool g_enableComments = false;
@@ -289,7 +328,7 @@ void ChapterHotkeyItem::updateDisplayText()
 	setText(QString::fromStdString(chapterName));
 	
 	if (!color.isEmpty() && color != "none") {
-		QColor circleColor(color);
+		QColor circleColor = getColorFromHex(color);
 		int diameter = 12;
 		QPixmap pixmap(diameter, diameter);
 		pixmap.fill(Qt::transparent);
@@ -329,17 +368,19 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 				if (!commentInput.empty()) {
 					finalChapterName = nameInput + "@" + commentInput;
 				}
-				// 添加颜色前缀
+				// 添加颜色前缀（使用文字名称如green，不是HEX值）
 				if (!hk->color.isEmpty() && hk->color != "none") {
-					finalChapterName = "(" + hk->color.toStdString() + ") " + finalChapterName;
+					QString colorName = getColorName(hk->color);
+					finalChapterName = "(" + colorName.toStdString() + ") " + finalChapterName;
 				}
 				obs_frontend_recording_add_chapter(finalChapterName.c_str());
 			}
 		} else {
 			string finalChapterName = hk->chapterName;
-			// 添加颜色前缀
+			// 添加颜色前缀（使用文字名称如green，不是HEX值）
 			if (!hk->color.isEmpty() && hk->color != "none") {
-				finalChapterName = "(" + hk->color.toStdString() + ") " + finalChapterName;
+				QString colorName = getColorName(hk->color);
+				finalChapterName = "(" + colorName.toStdString() + ") " + finalChapterName;
 			}
 			obs_frontend_recording_add_chapter(finalChapterName.c_str());
 		}
@@ -451,7 +492,7 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 				// 创建彩色圆点图标
 				QIcon icon;
 				if (!color.isEmpty() && color != "none") {
-					QColor circleColor(color);
+					QColor circleColor = getColorFromHex(color);
 					int diameter = 12;
 					QPixmap pixmap(diameter, diameter);
 					pixmap.fill(Qt::transparent);
