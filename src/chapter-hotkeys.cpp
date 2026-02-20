@@ -393,7 +393,6 @@ QString ChapterHotkeyItem::getHotkeyText() const
 	return keys.join(" + ");
 }
 
-static int64_t g_triggerTimestamp = 0;
 static ChapterHotkeyItem* g_currentHotkeyItem = nullptr;
 
 void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
@@ -402,12 +401,6 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 	auto hk = static_cast<ChapterHotkeyItem *>(_this);
 
 	if (pressed) {
-		auto output = obs_frontend_get_recording_output();
-		if (output) {
-			g_triggerTimestamp = obs_output_get_total_time(output);
-		} else {
-			g_triggerTimestamp = 0;
-		}
 		g_currentHotkeyItem = hk;
 		
 		string chapterName = hk->getChapterName();
