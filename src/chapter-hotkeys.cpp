@@ -50,7 +50,13 @@ static QMap<QString, QString> createColorMap()
 static QString getColorName(const QString &colorHex)
 {
 	static QMap<QString, QString> colorMap = createColorMap();
-	return colorMap.value(colorHex.toLower(), "green");
+	QString normalized = colorHex;
+	if (!normalized.startsWith("#")) {
+		normalized = normalized.toLower();
+	} else {
+		normalized = normalized.toLower();
+	}
+	return colorMap.value(normalized, colorMap.value(normalized, "green"));
 }
 
 static QString getColorHex(const QString &colorNameOrHex)
@@ -151,24 +157,6 @@ void ChapterHotkeyUI::on_actionRenameHotkey_triggered()
 	item->setFlags(flags | Qt::ItemIsEditable);
 	ui->listWidget->editItem(item);
 	item->setFlags(flags);
-}
-
-void ChapterHotkeyUI::on_actionSetHotkey_triggered()
-{
-	auto item = ui->listWidget->currentItem();
-	if (!item) return;
-	
-	ChapterHotkeyItem *hkItem = dynamic_cast<ChapterHotkeyItem*>(item);
-	if (!hkItem) return;
-	
-	auto *window = static_cast<QMainWindow*>(obs_frontend_get_main_window());
-	QMessageBox msgBox(window);
-	msgBox.setWindowTitle(obs_module_text("ChapterHotkey.SetHotkey"));
-	msgBox.setText(QString("当前快捷键: %1\n\n如需设置或修改快捷键，请在OBS主菜单:\n工具 -> 快捷键 中找到 '%2' 进行设置")
-		.arg(hkItem->getHotkeyText())
-		.arg(QString::fromStdString(hkItem->getChapterName())));
-	msgBox.setStandardButtons(QMessageBox::Ok);
-	msgBox.exec();
 }
 
 void ChapterHotkeyUI::on_colorButtonGreen_clicked() { setSelectedItemColor("#718637"); }
@@ -405,12 +393,23 @@ QString ChapterHotkeyItem::getHotkeyText() const
 	return keys.join(" + ");
 }
 
+static int64_t g_triggerTimestamp = 0;
+static ChapterHotkeyItem* g_currentHotkeyItem = nullptr;
+
 void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 				      obs_hotkey_t *, bool pressed)
 {
 	auto hk = static_cast<ChapterHotkeyItem *>(_this);
 
 	if (pressed) {
+		auto output = obs_frontend_get_recording_output();
+		if (output) {
+			g_triggerTimestamp = obs_output_get_total_time(output);
+		} else {
+			g_triggerTimestamp = 0;
+		}
+		g_currentHotkeyItem = hk;
+		
 		string chapterName = hk->getChapterName();
 		QString colorHex = hk->getColor();
 		
@@ -496,10 +495,6 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 
 	QVBoxLayout *layout = new QVBoxLayout;
 	setLayout(layout);
-
-	label = new QLabel(this);
-	layout->addWidget(label);
-	label->setText("添加标记注释");
 
 	nameLabel = new QLabel("标记名称:", this);
 	layout->addWidget(nameLabel);

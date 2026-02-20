@@ -32,7 +32,6 @@
      <addaction name="actionRemoveHotkey"/>
      <addaction name="separator"/>
      <addaction name="actionRenameHotkey"/>
-     <addaction name="actionSetHotkey"/>
     </widget>
    </item>
    <item>
@@ -219,14 +218,6 @@
    </property>
    <property name="themeID" stdset="0">
     <string notr="true">configIconSmall</string>
-   </property>
-  </action>
-  <action name="actionSetHotkey">
-   <property name="text">
-    <string>ChapterHotkey.SetHotkey</string>
-   </property>
-   <property name="themeID" stdset="0">
-    <string notr="true">hotkeyIconSmall</string>
    </property>
   </action>
  </widget>

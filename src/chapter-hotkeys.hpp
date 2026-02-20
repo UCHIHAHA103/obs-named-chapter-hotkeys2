@@ -44,7 +44,6 @@ private slots:
 	void on_actionAddHotkey_triggered();
 	void on_actionRemoveHotkey_triggered();
 	void on_actionRenameHotkey_triggered();
-	void on_actionSetHotkey_triggered();
 	void on_colorButtonGreen_clicked();
 	void on_colorButtonRed_clicked();
 	void on_colorButtonPurple_clicked();
@@ -80,13 +79,13 @@ public:
 	std::string getChapterName() const { return chapterName; }
 	QString getColor() const { return color; }
 	void setColor(const QString &newColor) { color = newColor; }
-
+ 
 private:
 	obs_hotkey_id hotkey;
 	std::string chapterName;
 	QString hotkeyUUID;
 	QString color;
-
+ 
 	static void HotkeyPressed(void *_this, obs_hotkey_id, obs_hotkey_t *,
 				  bool pressed);
 };
