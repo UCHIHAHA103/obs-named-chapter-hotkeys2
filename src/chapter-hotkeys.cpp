@@ -164,28 +164,11 @@ void ChapterHotkeyUI::on_actionSetHotkey_triggered()
 	auto *window = static_cast<QMainWindow*>(obs_frontend_get_main_window());
 	QMessageBox msgBox(window);
 	msgBox.setWindowTitle(obs_module_text("ChapterHotkey.SetHotkey"));
-	msgBox.setText(QString("为 '%1' 设置快捷键\n\n请按下想要设置的快捷键组合\n当前快捷键: %2")
-		.arg(QString::fromStdString(hkItem->getChapterName()))
-		.arg(hkItem->getHotkeyText()));
-	msgBox.setInformativeText("点击确定后，在弹出的输入框中按下快捷键");
-	msgBox.setStandardButtons(QMessageBox::Ok | QMessageBox::Reset);
-	msgBox.setDefaultButton(QMessageBox::Ok);
-	
-	int ret = msgBox.exec();
-	
-	if (ret == QMessageBox::Reset) {
-		hkItem->updateDisplayText();
-		saveToExternalConfig();
-		return;
-	}
-	
-	if (ret == QMessageBox::Ok) {
-		QMessageBox keyBox(window);
-		keyBox.setWindowTitle(obs_module_text("ChapterHotkey.SetHotkey"));
-		keyBox.setText("请按下快捷键组合");
-		keyBox.setStandardButtons(QMessageBox::Cancel);
-		keyBox.exec();
-	}
+	msgBox.setText(QString("当前快捷键: %1\n\n如需设置或修改快捷键，请在OBS主菜单:\n工具 -> 快捷键 中找到 '%2' 进行设置")
+		.arg(hkItem->getHotkeyText())
+		.arg(QString::fromStdString(hkItem->getChapterName())));
+	msgBox.setStandardButtons(QMessageBox::Ok);
+	msgBox.exec();
 }
 
 void ChapterHotkeyUI::on_colorButtonGreen_clicked() { setSelectedItemColor("#718637"); }
@@ -428,36 +411,37 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 	auto hk = static_cast<ChapterHotkeyItem *>(_this);
 
 	if (pressed) {
+		string chapterName = hk->getChapterName();
+		QString colorHex = hk->getColor();
+		
 		if (g_enableComments) {
-			string nameInput = hk->chapterName;
+			string nameInput = chapterName;
 			string commentInput;
 
 			auto window = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 			bool accepted = ChapterWithCommentDialog::AskForNameAndComment(
 				window, 
 				"添加标记注释", 
-				"请输入标记注释", 
+				"", 
 				nameInput, 
 				commentInput,
-				QString::fromStdString(hk->chapterName));
+				QString::fromStdString(chapterName));
 
 			if (accepted) {
 				string finalChapterName = nameInput;
 				if (!commentInput.empty()) {
 					finalChapterName = nameInput + "@" + commentInput;
 				}
-				// 添加颜色前缀（使用文字名称如green，不是HEX值）
-				if (!hk->color.isEmpty() && hk->color != "none") {
-					QString colorName = getColorName(hk->color);
+				if (!colorHex.isEmpty() && colorHex != "none") {
+					QString colorName = getColorName(colorHex);
 					finalChapterName = "(" + colorName.toStdString() + ") " + finalChapterName;
 				}
 				obs_frontend_recording_add_chapter(finalChapterName.c_str());
 			}
 		} else {
-			string finalChapterName = hk->chapterName;
-			// 添加颜色前缀（使用文字名称如green，不是HEX值）
-			if (!hk->color.isEmpty() && hk->color != "none") {
-				QString colorName = getColorName(hk->color);
+			string finalChapterName = chapterName;
+			if (!colorHex.isEmpty() && colorHex != "none") {
+				QString colorName = getColorName(colorHex);
 				finalChapterName = "(" + colorName.toStdString() + ") " + finalChapterName;
 			}
 			obs_frontend_recording_add_chapter(finalChapterName.c_str());
