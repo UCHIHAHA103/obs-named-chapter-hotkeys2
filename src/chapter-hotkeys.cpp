@@ -7,6 +7,7 @@
 #include <QUuid>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QGuiApplication>
 
 using namespace std;
 
@@ -288,6 +289,11 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 	if (index >= 0) {
 		dialog.nameCombo->setCurrentIndex(index);
 	}
+	
+	// 移动到屏幕中心
+	QRect screenRect = QGuiApplication::primaryScreen()->geometry();
+	QRect dialogRect = dialog.rect();
+	dialog.move(screenRect.center() - dialogRect.center());
 	
 	dialog.commentInput->setFocus();
 
