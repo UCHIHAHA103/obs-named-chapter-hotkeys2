@@ -155,25 +155,11 @@ void ChapterHotkeyUI::saveToExternalConfig()
 			static_cast<obs_data_array_t *>(
 				item->data(Bindings).value<void *>());
 		
-		// 转换bindings为JSON数组
-		QJsonArray bindingsArray;
-		if (bindings) {
-			size_t count = obs_data_array_count(bindings);
-			for (size_t j = 0; j < count; j++) {
-				OBSDataAutoRelease binding = obs_data_array_item(bindings, j);
-				// 简化：保存为字符串表示
-				const char *desc = obs_data_get_json(binding);
-				if (desc) {
-					bindingsArray.append(QString::fromUtf8(desc));
-				}
-			}
-		}
-		
+		// 外部配置文件不需要绑定信息，PR插件只需要名称和颜色
 		QJsonObject markerObj;
 		markerObj["name"] = name;
 		markerObj["uuid"] = uuid;
 		markerObj["color"] = color;
-		markerObj["bindings"] = bindingsArray;
 		
 		markersArray.append(markerObj);
 	}

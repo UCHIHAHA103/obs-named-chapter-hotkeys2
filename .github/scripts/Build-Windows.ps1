@@ -48,6 +48,29 @@ function Build {
     $ProductName = $BuildSpec.name
     $ProductVersion = $BuildSpec.version
 
+    # 检测并确保MSBuild可用
+    $msbuildPath = Get-Command "msbuild.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+    if (-not $msbuildPath) {
+        # 尝试使用vswhere查找Visual Studio 2022
+        $vswherePath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path $vswherePath) {
+            $vsPath = & $vswherePath -latest -prerelease -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            if ($vsPath) {
+                $msbuildPath = Join-Path $vsPath "MSBuild\Current\Bin\MSBuild.exe"
+                if (Test-Path $msbuildPath) {
+                    $env:PATH = "$(Split-Path $msbuildPath);$env:PATH"
+                    Write-Host "MSBuild found at: $msbuildPath" -ForegroundColor Green
+                }
+            }
+        }
+    }
+    
+    if (-not $msbuildPath) {
+        Write-Warning "MSBuild not found. CMake may fail to find Visual Studio."
+    } else {
+        Write-Host "MSBuild is available at: $msbuildPath" -ForegroundColor Green
+    }
+
     if ( ! $SkipDeps ) {
         Install-BuildDependencies -WingetFile "${ScriptHome}/.Wingetfile"
     }
