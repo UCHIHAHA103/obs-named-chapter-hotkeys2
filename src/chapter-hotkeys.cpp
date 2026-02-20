@@ -1,5 +1,6 @@
 #include "chapter-hotkeys-optimized.hpp"
 
+
 #include <QAction>
 #include <QMainWindow>
 #include <QObject>
