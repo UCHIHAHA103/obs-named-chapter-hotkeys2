@@ -23,9 +23,9 @@ class ChapterHotkeyUI : public QDialog {
 	Q_OBJECT
 
 	std::unique_ptr<Ui_HotkeyChaptersDialog> ui;
-	QCheckBox *enableCommentsCheckBox;
 
 public:
+	QCheckBox *enableCommentsCheckBox;
 	ChapterHotkeyUI(QWidget *parent);
 
 	void ShowHideDialog();
@@ -78,4 +78,19 @@ private:
 	QLabel *commentLabel;
 	QLineEdit *nameInput;
 	QLineEdit *commentInput;
+};
+
+class ChapterNameDialog : public QDialog {
+	Q_OBJECT
+
+public:
+	ChapterNameDialog(QWidget *parent);
+
+	static bool AskForName(QWidget *parent, const QString &title,
+			       const QString &text, std::string &name,
+			       const QString &placeHolder = QString(""));
+
+private:
+	QLabel *label;
+	QLineEdit *input;
 };
