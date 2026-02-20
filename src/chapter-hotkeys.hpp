@@ -102,6 +102,10 @@ public:
 					const QString &text, std::string &nameInput,
 					std::string &commentInput,
 					const QString &placeHolder = QString(""));
+	static bool IsDialogOpen() { return s_isDialogOpen; }
+
+protected:
+	void closeEvent(QCloseEvent *event) override;
 
 private:
 	QLabel *nameLabel;
@@ -110,6 +114,8 @@ private:
 	QTextEdit *commentInput;
 	void saveWindowState();
 	void loadWindowState();
+	
+	static bool s_isDialogOpen;
 };
 
 class ChapterNameDialog : public QDialog {

@@ -27,6 +27,8 @@
 
 using namespace std;
 
+bool ChapterWithCommentDialog::s_isDialogOpen = false;
+
 static QMap<QString, QString> createColorMap()
 {
 	QMap<QString, QString> map;
@@ -428,6 +430,11 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 			return;
 		}
 		
+		// 检查是否已有窗口打开
+		if (ChapterWithCommentDialog::IsDialogOpen()) {
+			return;
+		}
+		
 		QTimer::singleShot(0, []() {
 			ShowCommentDialog();
 		});
@@ -533,12 +540,19 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	connect(buttonbox, &QDialogButtonBox::accepted, this, &QDialog::accept);
 	connect(buttonbox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 	
+	s_isDialogOpen = true;
 	loadWindowState();
 }
 
 ChapterWithCommentDialog::~ChapterWithCommentDialog()
 {
+	s_isDialogOpen = false;
+}
+
+void ChapterWithCommentDialog::closeEvent(QCloseEvent *event)
+{
 	saveWindowState();
+	QDialog::closeEvent(event);
 }
 
 void ChapterWithCommentDialog::saveWindowState()
