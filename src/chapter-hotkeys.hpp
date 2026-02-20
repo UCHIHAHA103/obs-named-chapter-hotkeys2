@@ -96,6 +96,7 @@ class ChapterWithCommentDialog : public QDialog {
 
 public:
 	ChapterWithCommentDialog(QWidget *parent);
+	~ChapterWithCommentDialog() override;
 
 	static bool AskForNameAndComment(QWidget *parent, const QString &title,
 					const QString &text, std::string &nameInput,
@@ -107,6 +108,8 @@ private:
 	QLabel *commentLabel;
 	QComboBox *nameCombo;
 	QTextEdit *commentInput;
+	void saveWindowState();
+	void loadWindowState();
 };
 
 class ChapterNameDialog : public QDialog {

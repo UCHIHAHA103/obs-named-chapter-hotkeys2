@@ -532,6 +532,103 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	buttonbox->setCenterButtons(true);
 	connect(buttonbox, &QDialogButtonBox::accepted, this, &QDialog::accept);
 	connect(buttonbox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+	
+	loadWindowState();
+}
+
+ChapterWithCommentDialog::~ChapterWithCommentDialog()
+{
+	saveWindowState();
+}
+
+void ChapterWithCommentDialog::saveWindowState()
+{
+	QString configPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/chapter-hotkeys/window-state.json";
+	QDir configDir(QFileInfo(configPath).absolutePath());
+	if (!configDir.exists()) {
+		configDir.mkpath(".");
+	}
+
+	QJsonObject windowState;
+	windowState["x"] = x();
+	windowState["y"] = y();
+	windowState["height"] = height();
+	if (screen()) {
+		windowState["screenName"] = screen()->name();
+	}
+
+	QJsonObject root;
+	root["commentDialog"] = windowState;
+
+	QFile file(configPath);
+	if (file.open(QIODevice::WriteOnly)) {
+		file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+		file.close();
+	}
+}
+
+void ChapterWithCommentDialog::loadWindowState()
+{
+	QString configPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/chapter-hotkeys/window-state.json";
+	QFile file(configPath);
+	if (!file.open(QIODevice::ReadOnly)) {
+		return;
+	}
+
+	QByteArray data = file.readAll();
+	file.close();
+
+	QJsonDocument doc = QJsonDocument::fromJson(data);
+	if (!doc.isObject()) {
+		return;
+	}
+
+	QJsonObject root = doc.object();
+	if (!root.contains("commentDialog")) {
+		return;
+	}
+
+	QJsonObject windowState = root["commentDialog"].toObject();
+	int x = windowState.value("x").toInt(INT_MIN);
+	int y = windowState.value("y").toInt(INT_MIN);
+	int height = windowState.value("height").toInt(180);
+	QString screenName = windowState.value("screenName").toString();
+
+	// 找到对应的屏幕
+	QScreen *targetScreen = nullptr;
+	if (!screenName.isEmpty()) {
+		for (QScreen *s : QGuiApplication::screens()) {
+			if (s->name() == screenName) {
+				targetScreen = s;
+				break;
+			}
+		}
+	}
+
+	// 如果没有找到目标屏幕，使用主屏幕
+	if (!targetScreen) {
+		targetScreen = QGuiApplication::primaryScreen();
+	}
+
+	// 恢复位置和尺寸
+	if (targetScreen) {
+		QRect screenGeometry = targetScreen->availableGeometry();
+		
+		// 设置最小高度和最大高度
+		int finalHeight = qBound(180, height, 600);
+		
+		// 确保窗口在屏幕范围内
+		if (x == INT_MIN || y == INT_MIN) {
+			// 第一次打开，居中显示
+			move(screenGeometry.center() - QPoint(200, finalHeight / 2));
+		} else {
+			// 恢复到之前的位置
+			move(x, y);
+		}
+		
+		// 设置高度
+		resize(400, finalHeight);
+	}
 }
 
 static bool IsWhitespace(char ch)
