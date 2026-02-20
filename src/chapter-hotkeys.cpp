@@ -447,6 +447,18 @@ static void ShowCommentDialog()
 		nameInput, 
 		commentInput,
 		g_pendingChapterName);
+
+	if (accepted) {
+		string finalChapterName = nameInput;
+		if (!commentInput.empty()) {
+			finalChapterName = nameInput + "@" + commentInput;
+		}
+		if (!g_pendingColorHex.isEmpty() && g_pendingColorHex != "none") {
+			QString colorName = getColorName(g_pendingColorHex);
+			finalChapterName = "(" + colorName.toStdString() + ") " + finalChapterName;
+		}
+		obs_frontend_recording_add_chapter(finalChapterName.c_str());
+	}
 }
 
 QVariant ChapterHotkeyItem::data(int role) const
@@ -492,7 +504,7 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	setWindowModality(Qt::WindowModality::WindowModal);
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint | Qt::WindowStaysOnTopHint);
 	setFixedWidth(400);
-	setMinimumHeight(200);
+	setMinimumHeight(180);
 
 	QVBoxLayout *layout = new QVBoxLayout;
 	setLayout(layout);
@@ -509,7 +521,8 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 
 	commentInput = new QTextEdit(this);
 	commentInput->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
-	commentInput->setMinimumHeight(80);
+	commentInput->setMinimumHeight(30);
+	commentInput->setMaximumHeight(500);
 	layout->addWidget(commentInput);
 
 	QDialogButtonBox *buttonbox = new QDialogButtonBox(
