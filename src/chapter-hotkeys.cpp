@@ -85,7 +85,7 @@ void ChapterHotkeyUI::on_actionAddHotkey_triggered()
 	auto uuid = QUuid::createUuid();
 	QString id = "chapter_hotkey_" + uuid.toString(QUuid::WithoutBraces);
 
-	auto item = new ChapterHotkeyItem(id, name.c_str(), nullptr, "green");
+	auto item = new ChapterHotkeyItem(id, name.c_str(), nullptr, "#718637");
 	ui->listWidget->addItem(item);
 	ui->listWidget->sortItems();
 }
@@ -108,14 +108,14 @@ void ChapterHotkeyUI::on_actionRenameHotkey_triggered()
 	ui->listWidget->sortItems();
 }
 
-void ChapterHotkeyUI::on_colorButtonGreen_clicked() { setSelectedItemColor("green"); }
-void ChapterHotkeyUI::on_colorButtonRed_clicked() { setSelectedItemColor("red"); }
-void ChapterHotkeyUI::on_colorButtonPurple_clicked() { setSelectedItemColor("purple"); }
-void ChapterHotkeyUI::on_colorButtonOrange_clicked() { setSelectedItemColor("orange"); }
-void ChapterHotkeyUI::on_colorButtonYellow_clicked() { setSelectedItemColor("yellow"); }
-void ChapterHotkeyUI::on_colorButtonWhite_clicked() { setSelectedItemColor("white"); }
-void ChapterHotkeyUI::on_colorButtonBlue_clicked() { setSelectedItemColor("blue"); }
-void ChapterHotkeyUI::on_colorButtonCyan_clicked() { setSelectedItemColor("cyan"); }
+void ChapterHotkeyUI::on_colorButtonGreen_clicked() { setSelectedItemColor("#718637"); }
+void ChapterHotkeyUI::on_colorButtonRed_clicked() { setSelectedItemColor("#D22C36"); }
+void ChapterHotkeyUI::on_colorButtonPurple_clicked() { setSelectedItemColor("#AF8BB1"); }
+void ChapterHotkeyUI::on_colorButtonOrange_clicked() { setSelectedItemColor("#E96F24"); }
+void ChapterHotkeyUI::on_colorButtonYellow_clicked() { setSelectedItemColor("#D0A12B"); }
+void ChapterHotkeyUI::on_colorButtonWhite_clicked() { setSelectedItemColor("#FFFFFF"); }
+void ChapterHotkeyUI::on_colorButtonBlue_clicked() { setSelectedItemColor("#428DFC"); }
+void ChapterHotkeyUI::on_colorButtonCyan_clicked() { setSelectedItemColor("#19F4D6"); }
 
 void ChapterHotkeyUI::setSelectedItemColor(const QString &color)
 {
@@ -226,7 +226,7 @@ void ChapterHotkeyUI::LoadHotkeys(obs_data_t *data)
 		OBSDataArrayAutoRelease bindings =
 			obs_data_get_array(hk, "bindings");
 
-		auto hkItem = new ChapterHotkeyItem(id, name, bindings, color ? color : "green");
+		auto hkItem = new ChapterHotkeyItem(id, name, bindings, color && *color ? color : "#718637");
 		ui->listWidget->addItem(hkItem);
 
 		obs_data_item_next(&item);
@@ -441,21 +441,29 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 
 	dialog.label->setText(text);
 	
-	// 使用静态方法获取所有章节名称
-	QStringList allNames = ChapterHotkeyUI::GetAllChapterNames();
-	// GetAllChapterNames已经返回带颜色前缀的名称，但只返回display name
-	// 我们需要获取原始名称作为数据，所以需要另一种方法
+	// 添加带颜色圆点的标记名称到下拉框
 	if (hk_edit) {
 		for (int i = 0; i < hk_edit->ui->listWidget->count(); i++) {
 			auto item = hk_edit->ui->listWidget->item(i);
 			QString name = item->data(Name).toString();
 			QString color = item->data(Color).toString();
 			if (!name.isEmpty()) {
-				QString displayName = name;
+				// 创建彩色圆点图标
+				QIcon icon;
 				if (!color.isEmpty() && color != "none") {
-					displayName = QString("(%1) %2").arg(color).arg(name);
+					QColor circleColor(color);
+					int diameter = 12;
+					QPixmap pixmap(diameter, diameter);
+					pixmap.fill(Qt::transparent);
+					QPainter painter(&pixmap);
+					painter.setRenderHint(QPainter::Antialiasing);
+					painter.setBrush(circleColor);
+					painter.setPen(QPen(QColor("#333333"), 1));
+					painter.drawEllipse(0, 0, diameter - 1, diameter - 1);
+					painter.end();
+					icon = QIcon(pixmap);
 				}
-				dialog.nameCombo->addItem(displayName, name); // 设置原始名称为项数据
+				dialog.nameCombo->addItem(icon, name, name); // 设置原始名称为项数据
 			}
 		}
 	}

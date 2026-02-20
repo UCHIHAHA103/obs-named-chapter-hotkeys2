@@ -52,7 +52,7 @@
          </size>
         </property>
         <property name="styleSheet">
-         <string notr="true">QPushButton { background-color: green; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid white; }</string>
+         <string notr="true">QPushButton { background-color: #718637; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid white; }</string>
         </property>
        </widget>
       </item>
@@ -65,7 +65,7 @@
          </size>
         </property>
         <property name="styleSheet">
-         <string notr="true">QPushButton { background-color: red; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid white; }</string>
+         <string notr="true">QPushButton { background-color: #D22C36; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid white; }</string>
         </property>
        </widget>
       </item>
@@ -78,7 +78,7 @@
          </size>
         </property>
         <property name="styleSheet">
-         <string notr="true">QPushButton { background-color: purple; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid white; }</string>
+         <string notr="true">QPushButton { background-color: #AF8BB1; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid white; }</string>
         </property>
        </widget>
       </item>
@@ -91,7 +91,7 @@
          </size>
         </property>
         <property name="styleSheet">
-         <string notr="true">QPushButton { background-color: orange; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid white; }</string>
+         <string notr="true">QPushButton { background-color: #E96F24; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid white; }</string>
         </property>
        </widget>
       </item>
@@ -104,7 +104,7 @@
          </size>
         </property>
         <property name="styleSheet">
-         <string notr="true">QPushButton { background-color: yellow; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid black; }</string>
+         <string notr="true">QPushButton { background-color: #D0A12B; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid black; }</string>
         </property>
        </widget>
       </item>
@@ -117,7 +117,7 @@
          </size>
         </property>
         <property name="styleSheet">
-         <string notr="true">QPushButton { background-color: white; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid black; }</string>
+         <string notr="true">QPushButton { background-color: #FFFFFF; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid black; }</string>
         </property>
        </widget>
       </item>
@@ -130,7 +130,7 @@
          </size>
         </property>
         <property name="styleSheet">
-         <string notr="true">QPushButton { background-color: blue; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid white; }</string>
+         <string notr="true">QPushButton { background-color: #428DFC; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid white; }</string>
         </property>
        </widget>
       </item>
@@ -143,7 +143,7 @@
          </size>
         </property>
         <property name="styleSheet">
-         <string notr="true">QPushButton { background-color: cyan; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid black; }</string>
+         <string notr="true">QPushButton { background-color: #19F4D6; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid black; }</string>
         </property>
        </widget>
       </item>
