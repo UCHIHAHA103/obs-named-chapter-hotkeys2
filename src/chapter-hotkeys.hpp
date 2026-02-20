@@ -102,7 +102,6 @@ public:
 					const QString &placeHolder = QString(""));
 
 private:
-	QLabel *label;
 	QLabel *nameLabel;
 	QLabel *commentLabel;
 	QComboBox *nameCombo;

@@ -50,14 +50,21 @@ static QMap<QString, QString> createColorMap()
 
 static QString getColorName(const QString &colorHex)
 {
-	static QMap<QString, QString> colorMap = createColorMap();
-	QString normalized = colorHex;
-	if (!normalized.startsWith("#")) {
-		normalized = normalized.toLower();
-	} else {
-		normalized = normalized.toLower();
-	}
-	return colorMap.value(normalized, colorMap.value(normalized, "green"));
+	if (colorHex == "#D22C36") return "red";
+	if (colorHex == "#AF8BB1") return "purple";
+	if (colorHex == "#E96F24") return "orange";
+	if (colorHex == "#D0A12B") return "yellow";
+	if (colorHex == "#FFFFFF") return "white";
+	if (colorHex == "#428DFC") return "blue";
+	if (colorHex == "#19F4D6") return "cyan";
+	if (colorHex == "red") return "red";
+	if (colorHex == "purple") return "purple";
+	if (colorHex == "orange") return "orange";
+	if (colorHex == "yellow") return "yellow";
+	if (colorHex == "white") return "white";
+	if (colorHex == "blue") return "blue";
+	if (colorHex == "cyan") return "cyan";
+	return "green";
 }
 
 static QString getColorHex(const QString &colorNameOrHex)
@@ -488,7 +495,7 @@ void ChapterHotkeyItem::setData(int role, const QVariant &value)
 	}
 }
 
-ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(parent), label(nullptr)
+ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(parent)
 {
 	setModal(true);
 	setWindowModality(Qt::WindowModality::WindowModal);
@@ -498,9 +505,6 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 
 	QVBoxLayout *layout = new QVBoxLayout;
 	setLayout(layout);
-
-	label = new QLabel(this);
-	layout->addWidget(label);
 
 	nameLabel = new QLabel("标记名称:", this);
 	layout->addWidget(nameLabel);
@@ -542,8 +546,6 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 {
 	ChapterWithCommentDialog dialog(parent);
 	dialog.setWindowTitle(title);
-
-	dialog.label->setText(text);
 	
 	// 添加带颜色圆点的标记名称到下拉框
 	if (hk_edit) {
