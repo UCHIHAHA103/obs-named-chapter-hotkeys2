@@ -165,7 +165,7 @@ void ChapterHotkeyUI::on_actionSetHotkey_triggered()
 	QMessageBox msgBox(window);
 	msgBox.setWindowTitle(obs_module_text("ChapterHotkey.SetHotkey"));
 	msgBox.setText(QString("为 '%1' 设置快捷键\n\n请按下想要设置的快捷键组合\n当前快捷键: %2")
-		.arg(QString::fromStdString(hkItem->chapterName))
+		.arg(QString::fromStdString(hkItem->getChapterName()))
 		.arg(hkItem->getHotkeyText()));
 	msgBox.setInformativeText("点击确定后，在弹出的输入框中按下快捷键");
 	msgBox.setStandardButtons(QMessageBox::Ok | QMessageBox::Reset);
@@ -174,7 +174,6 @@ void ChapterHotkeyUI::on_actionSetHotkey_triggered()
 	int ret = msgBox.exec();
 	
 	if (ret == QMessageBox::Reset) {
-		obs_hotkey_detach(hkItem->hotkey);
 		hkItem->updateDisplayText();
 		saveToExternalConfig();
 		return;
@@ -202,10 +201,9 @@ void ChapterHotkeyUI::setSelectedItemColor(const QString &color)
 {
 	auto item = ui->listWidget->currentItem();
 	if (item) {
-		item->setData(Color, color);
-		
 		ChapterHotkeyItem *hkItem = dynamic_cast<ChapterHotkeyItem*>(item);
 		if (hkItem) {
+			hkItem->setColor(color);
 			hkItem->updateDisplayText();
 		}
 		

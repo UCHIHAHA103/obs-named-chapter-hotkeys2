@@ -77,6 +77,9 @@ public:
 	void updateDisplayText();
 
 	obs_hotkey_id getHotkey() const { return hotkey; }
+	std::string getChapterName() const { return chapterName; }
+	QString getColor() const { return color; }
+	void setColor(const QString &newColor) { color = newColor; }
 
 private:
 	obs_hotkey_id hotkey;
