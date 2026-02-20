@@ -1,6 +1,5 @@
 #include "chapter-hotkeys.hpp"
 
-
 #include <QAction>
 #include <QMainWindow>
 #include <QObject>
@@ -47,12 +46,26 @@ bool ChapterHotkeyUI::IsCommentsEnabled()
 	return g_enableComments;
 }
 
+QStringList ChapterHotkeyUI::GetAllChapterNames()
+{
+	QStringList names;
+	if (hk_edit) {
+		for (int i = 0; i < hk_edit->ui->listWidget->count(); i++) {
+			auto item = hk_edit->ui->listWidget->item(i);
+			QString name = item->data(Name).toString();
+			if (!name.isEmpty()) {
+				names.append(name);
+			}
+		}
+	}
+	return names;
+}
+
 void ChapterHotkeyUI::on_actionAddHotkey_triggered()
 {
 	string name;
 	bool accepted = ChapterNameDialog::AskForName(
-		this, obs_module_text("ChapterHotkey.AddDialog.Title"),
-		obs_module_text("ChapterHotkey.AddDialog.Text"), name);
+		this, "添加标记名称", "请输入标记名称", name);
 	if (!accepted || name.empty())
 		return;
 
@@ -133,8 +146,7 @@ ChapterHotkeyItem::ChapterHotkeyItem(const QString &id, const char *name,
 {
 	setText(name);
 
-	QString translationName = obs_module_text("ChapterHotkey.Name");
-	QString formattedName = translationName.arg(name);
+	QString formattedName = QString("添加章节标记 '%1'").arg(name);
 
 	hotkey = obs_hotkey_register_frontend(
 		id.toUtf8().constData(), formattedName.toUtf8().constData(),
@@ -199,8 +211,7 @@ void ChapterHotkeyItem::setData(int role, const QVariant &value)
 {
 	if (role == Name || role == Qt::EditRole) {
 		QString newName = value.toString();
-		QString translationName = obs_module_text("ChapterHotkey.Name");
-		QString formattedName = translationName.arg(newName);
+		QString formattedName = QString("添加章节标记 '%1'").arg(newName);
 
 		chapterName = newName.toStdString();
 		obs_hotkey_set_description(hotkey,
@@ -216,7 +227,7 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 {
 	setModal(true);
 	setWindowModality(Qt::WindowModality::WindowModal);
-	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint | Qt::WindowStaysOnTopHint);
 	setFixedWidth(400);
 	setMinimumHeight(200);
 
@@ -230,8 +241,8 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	nameLabel = new QLabel("标记名称:", this);
 	layout->addWidget(nameLabel);
 
-	nameInput = new QLineEdit(this);
-	layout->addWidget(nameInput);
+	nameCombo = new QComboBox(this);
+	layout->addWidget(nameCombo);
 
 	commentLabel = new QLabel("注释:", this);
 	layout->addWidget(commentLabel);
@@ -269,15 +280,22 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 	dialog.setWindowTitle(title);
 
 	dialog.label->setText(text);
-	dialog.nameInput->setText(placeHolder);
-	dialog.nameInput->selectAll();
+	
+	QStringList allNames = ChapterHotkeyUI::GetAllChapterNames();
+	dialog.nameCombo->addItems(allNames);
+	
+	int index = dialog.nameCombo->findText(placeHolder);
+	if (index >= 0) {
+		dialog.nameCombo->setCurrentIndex(index);
+	}
+	
 	dialog.commentInput->setFocus();
 
-	if (dialog.exec() != DialogCode::Accepted) {
+	if (dialog.exec() != QDialog::Accepted) {
 		return false;
 	}
 
-	nameInput = dialog.nameInput->text().toUtf8().constData();
+	nameInput = dialog.nameCombo->currentText().toUtf8().constData();
 	commentInput = dialog.commentInput->text().toUtf8().constData();
 	CleanWhitespace(nameInput);
 	CleanWhitespace(commentInput);
@@ -288,7 +306,7 @@ ChapterNameDialog::ChapterNameDialog(QWidget *parent) : QDialog(parent)
 {
 	setModal(true);
 	setWindowModality(Qt::WindowModality::WindowModal);
-	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint | Qt::WindowStaysOnTopHint);
 	setFixedWidth(400);
 	setMinimumHeight(100);
 
@@ -319,7 +337,7 @@ bool ChapterNameDialog::AskForName(QWidget *parent, const QString &title,
 	dialog.input->setText(placeHolder);
 	dialog.input->selectAll();
 
-	if (dialog.exec() != DialogCode::Accepted)
+	if (dialog.exec() != QDialog::Accepted)
 		return false;
 
 	name = dialog.input->text().toUtf8().constData();
@@ -350,7 +368,7 @@ extern "C" void InitChapterHotkeys()
 {
 	auto action =
 		static_cast<QAction *>(obs_frontend_add_tools_menu_qaction(
-			obs_module_text("ChapterHotkeys")));
+			"章节标记热键"));
 	auto window =
 		static_cast<QMainWindow *>(obs_frontend_get_main_window());
 

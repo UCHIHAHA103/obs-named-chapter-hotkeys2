@@ -4,7 +4,6 @@
 
 #include "external/qt-wrappers.hpp"
 
-
 #include <obs.hpp>
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -14,6 +13,9 @@
 #include <QLineEdit>
 #include <QCheckBox>
 #include <QDialogButtonBox>
+#include <QListWidgetItem>
+#include <QVariant>
+#include <QComboBox>
 #include <string>
 #include <memory>
 
@@ -33,6 +35,8 @@ public:
 	void SaveHotkeys(obs_data_t *data);
 	void LoadHotkeys(obs_data_t *data);
 	bool IsCommentsEnabled();
+
+	static QStringList GetAllChapterNames();
 
 private slots:
 	void on_actionAddHotkey_triggered();
@@ -76,7 +80,7 @@ private:
 	QLabel *label;
 	QLabel *nameLabel;
 	QLabel *commentLabel;
-	QLineEdit *nameInput;
+	QComboBox *nameCombo;
 	QLineEdit *commentInput;
 };
 
