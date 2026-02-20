@@ -427,7 +427,10 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 
 	dialog.label->setText(text);
 	
-	// 添加带颜色前缀的标记名称到下拉框
+	// 使用静态方法获取所有章节名称
+	QStringList allNames = ChapterHotkeyUI::GetAllChapterNames();
+	// GetAllChapterNames已经返回带颜色前缀的名称，但只返回display name
+	// 我们需要获取原始名称作为数据，所以需要另一种方法
 	if (hk_edit) {
 		for (int i = 0; i < hk_edit->ui->listWidget->count(); i++) {
 			auto item = hk_edit->ui->listWidget->item(i);

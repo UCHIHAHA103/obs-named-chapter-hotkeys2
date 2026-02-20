@@ -27,6 +27,8 @@ class ChapterHotkeyUI : public QDialog {
 	std::unique_ptr<Ui_HotkeyChaptersDialog> ui;
 
 public:
+	friend class ChapterWithCommentDialog;
+	
 	QCheckBox *enableCommentsCheckBox;
 	ChapterHotkeyUI(QWidget *parent);
 
