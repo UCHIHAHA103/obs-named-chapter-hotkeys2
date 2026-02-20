@@ -22,6 +22,7 @@
 #include <QPainter>
 #include <QMap>
 #include <QMessageBox>
+#include <QMetaObject>
 
 using namespace std;
 
@@ -393,7 +394,10 @@ QString ChapterHotkeyItem::getHotkeyText() const
 	return keys.join(" + ");
 }
 
-static ChapterHotkeyItem* g_currentHotkeyItem = nullptr;
+static QString g_pendingChapterName;
+static QString g_pendingColorHex;
+
+static void ShowCommentDialog();
 
 void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 				      obs_hotkey_t *, bool pressed)
@@ -401,43 +405,49 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 	auto hk = static_cast<ChapterHotkeyItem *>(_this);
 
 	if (pressed) {
-		g_currentHotkeyItem = hk;
+		g_pendingChapterName = QString::fromStdString(hk->getChapterName());
+		g_pendingColorHex = hk->getColor();
 		
-		string chapterName = hk->getChapterName();
-		QString colorHex = hk->getColor();
-		
-		if (g_enableComments) {
-			string nameInput = chapterName;
-			string commentInput;
-
-			auto window = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-			bool accepted = ChapterWithCommentDialog::AskForNameAndComment(
-				window, 
-				"添加标记注释", 
-				"", 
-				nameInput, 
-				commentInput,
-				QString::fromStdString(chapterName));
-
-			if (accepted) {
-				string finalChapterName = nameInput;
-				if (!commentInput.empty()) {
-					finalChapterName = nameInput + "@" + commentInput;
-				}
-				if (!colorHex.isEmpty() && colorHex != "none") {
-					QString colorName = getColorName(colorHex);
-					finalChapterName = "(" + colorName.toStdString() + ") " + finalChapterName;
-				}
-				obs_frontend_recording_add_chapter(finalChapterName.c_str());
-			}
-		} else {
-			string finalChapterName = chapterName;
-			if (!colorHex.isEmpty() && colorHex != "none") {
-				QString colorName = getColorName(colorHex);
+		if (!g_enableComments) {
+			string finalChapterName = hk->getChapterName();
+			if (!g_pendingColorHex.isEmpty() && g_pendingColorHex != "none") {
+				QString colorName = getColorName(g_pendingColorHex);
 				finalChapterName = "(" + colorName.toStdString() + ") " + finalChapterName;
 			}
 			obs_frontend_recording_add_chapter(finalChapterName.c_str());
+			return;
 		}
+		
+		QMetaObject::invokeMethod([]() {
+			ShowCommentDialog();
+		}, Qt::QueuedConnection);
+	}
+}
+
+static void ShowCommentDialog()
+{
+	string nameInput = g_pendingChapterName.toStdString();
+	string commentInput;
+	
+	auto window = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	bool accepted = ChapterWithCommentDialog::AskForNameAndComment(
+		window, 
+		"添加标记注释", 
+		"", 
+		nameInput, 
+		commentInput,
+		g_pendingChapterName);
+
+	if (accepted) {
+		string finalChapterName = nameInput;
+		if (!commentInput.empty()) {
+			finalChapterName = nameInput + "@" + commentInput;
+		}
+		if (!g_pendingColorHex.isEmpty() && g_pendingColorHex != "none") {
+			QString colorName = getColorName(g_pendingColorHex);
+			finalChapterName = "(" + colorName.toStdString() + ") " + finalChapterName;
+		}
+		obs_frontend_recording_add_chapter(finalChapterName.c_str());
 	}
 }
 
