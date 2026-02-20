@@ -1,14 +1,17 @@
-#include "chapter-hotkeys.hpp"
+#include "chapter-hotkeys-optimized.hpp"
 
 #include <QAction>
 #include <QMainWindow>
 #include <QObject>
 #include <QMenu>
 #include <QUuid>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
 
 using namespace std;
 
 ChapterHotkeyUI *hk_edit;
+bool g_enableComments = false;
 
 ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 	: QDialog(parent),
@@ -17,6 +20,16 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 	ui->setupUi(this);
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 	ui->listWidget->setSortingEnabled(true);
+
+	QVBoxLayout *mainLayout = qobject_cast<QVBoxLayout *>(layout());
+	if (mainLayout) {
+		enableCommentsCheckBox = new QCheckBox("启用标记注释", this);
+		enableCommentsCheckBox->setChecked(false);
+		connect(enableCommentsCheckBox, &QCheckBox::toggled, [](bool checked) {
+			g_enableComments = checked;
+		});
+		mainLayout->insertWidget(0, enableCommentsCheckBox);
+	}
 }
 
 void ChapterHotkeyUI::ShowHideDialog()
@@ -28,6 +41,11 @@ void ChapterHotkeyUI::ShowHideDialog()
 	}
 }
 
+bool ChapterHotkeyUI::IsCommentsEnabled()
+{
+	return g_enableComments;
+}
+
 void ChapterHotkeyUI::on_actionAddHotkey_triggered()
 {
 	string name;
@@ -37,7 +55,6 @@ void ChapterHotkeyUI::on_actionAddHotkey_triggered()
 	if (!accepted || name.empty())
 		return;
 
-	/* Generate ID */
 	auto uuid = QUuid::createUuid();
 	QString id = "chapter_hotkey_" + uuid.toString(QUuid::WithoutBraces);
 
@@ -107,10 +124,6 @@ void ChapterHotkeyUI::SaveHotkeys(obs_data_t *data)
 	}
 }
 
-/*
- * Hotkey item
- */
-
 ChapterHotkeyItem::ChapterHotkeyItem(const QString &id, const char *name,
 				     obs_data_array_t *bindings)
 	: QListWidgetItem(nullptr),
@@ -140,8 +153,31 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 {
 	auto hk = static_cast<ChapterHotkeyItem *>(_this);
 
-	if (pressed)
-		obs_frontend_recording_add_chapter(hk->chapterName.c_str());
+	if (pressed) {
+		if (g_enableComments) {
+			string nameInput = hk->chapterName;
+			string commentInput;
+
+			auto window = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+			bool accepted = ChapterWithCommentDialog::AskForNameAndComment(
+				window, 
+				"添加标记注释", 
+				"请输入标记注释", 
+				nameInput, 
+				commentInput,
+				QString::fromStdString(hk->chapterName));
+
+			if (accepted) {
+				string finalChapterName = nameInput;
+				if (!commentInput.empty()) {
+					finalChapterName = nameInput + "@" + commentInput;
+				}
+				obs_frontend_recording_add_chapter(finalChapterName.c_str());
+			}
+		} else {
+			obs_frontend_recording_add_chapter(hk->chapterName.c_str());
+		}
+	}
 }
 
 QVariant ChapterHotkeyItem::data(int role) const
@@ -175,29 +211,32 @@ void ChapterHotkeyItem::setData(int role, const QVariant &value)
 	}
 }
 
-/*
- * Name Dialog from main UI
- */
-
-ChapterNameDialog::ChapterNameDialog(QWidget *parent) : QDialog(parent)
+ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(parent)
 {
 	setModal(true);
 	setWindowModality(Qt::WindowModality::WindowModal);
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
-	setFixedWidth(555);
-	setMinimumHeight(100);
+	setFixedWidth(400);
+	setMinimumHeight(200);
+
 	QVBoxLayout *layout = new QVBoxLayout;
 	setLayout(layout);
 
 	label = new QLabel(this);
 	layout->addWidget(label);
-	label->setText("Set Text");
+	label->setText("添加标记注释");
 
-	userText = new QLineEdit(this);
-	layout->addWidget(userText);
+	nameLabel = new QLabel("标记名称:", this);
+	layout->addWidget(nameLabel);
 
-	checkbox = new QCheckBox(this);
-	layout->addWidget(checkbox);
+	nameInput = new QLineEdit(this);
+	layout->addWidget(nameInput);
+
+	commentLabel = new QLabel("注释:", this);
+	layout->addWidget(commentLabel);
+
+	commentInput = new QLineEdit(this);
+	layout->addWidget(commentInput);
 
 	QDialogButtonBox *buttonbox = new QDialogButtonBox(
 		QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
@@ -220,31 +259,29 @@ static void CleanWhitespace(std::string &str)
 		str.erase(str.begin());
 }
 
-bool ChapterNameDialog ::AskForName(QWidget *parent, const QString &title,
-				    const QString &text,
-				    std::string &userTextInput,
-				    const QString &placeHolder)
+bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QString &title,
+						   const QString &text, std::string &nameInput,
+						   std::string &commentInput,
+						   const QString &placeHolder)
 {
-	ChapterNameDialog dialog(parent);
+	ChapterWithCommentDialog dialog(parent);
 	dialog.setWindowTitle(title);
 
-	dialog.checkbox->setHidden(true);
 	dialog.label->setText(text);
-	dialog.userText->setText(placeHolder);
-	dialog.userText->selectAll();
+	dialog.nameInput->setText(placeHolder);
+	dialog.nameInput->selectAll();
+	dialog.commentInput->setFocus();
 
 	if (dialog.exec() != DialogCode::Accepted) {
 		return false;
 	}
 
-	userTextInput = dialog.userText->text().toUtf8().constData();
-	CleanWhitespace(userTextInput);
+	nameInput = dialog.nameInput->text().toUtf8().constData();
+	commentInput = dialog.commentInput->text().toUtf8().constData();
+	CleanWhitespace(nameInput);
+	CleanWhitespace(commentInput);
 	return true;
 }
-
-/*
- * Frontend Event Handlers
- */
 
 static void LoadSaveHotkeys(obs_data_t *save_data, bool saving, void *)
 {
@@ -252,17 +289,18 @@ static void LoadSaveHotkeys(obs_data_t *save_data, bool saving, void *)
 		OBSDataAutoRelease obj = obs_data_create();
 		hk_edit->SaveHotkeys(obj);
 		obs_data_set_obj(save_data, "chapter_hotkeys", obj);
+		obs_data_set_bool(save_data, "enable_comments", g_enableComments);
 	} else {
 		OBSDataAutoRelease obj =
 			obs_data_get_obj(save_data, "chapter_hotkeys");
 		if (obj)
 			hk_edit->LoadHotkeys(obj);
+		g_enableComments = obs_data_get_bool(save_data, "enable_comments");
+		if (hk_edit->enableCommentsCheckBox) {
+			hk_edit->enableCommentsCheckBox->setChecked(g_enableComments);
+		}
 	}
 }
-
-/*
- * C stuff
- */
 
 extern "C" void InitChapterHotkeys()
 {
@@ -272,7 +310,6 @@ extern "C" void InitChapterHotkeys()
 	auto window =
 		static_cast<QMainWindow *>(obs_frontend_get_main_window());
 
-	/* Push translation function so that strings in .ui file are translated */
 	obs_frontend_push_ui_translation(obs_module_get_string);
 	hk_edit = new ChapterHotkeyUI(window);
 	obs_frontend_pop_ui_translation();
