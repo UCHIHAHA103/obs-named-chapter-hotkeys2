@@ -23,6 +23,7 @@
 #include <QMap>
 #include <QMessageBox>
 #include <QTimer>
+#include <QTextEdit>
 
 using namespace std;
 
@@ -415,13 +416,15 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 		g_pendingChapterName = QString::fromStdString(hk->getChapterName());
 		g_pendingColorHex = hk->getColor();
 		
+		// 先在触发快捷键时立即添加标记（不带注释），确保时间点是触发时的时间
+		string initialChapterName = hk->getChapterName();
+		if (!g_pendingColorHex.isEmpty() && g_pendingColorHex != "none") {
+			QString colorName = getColorName(g_pendingColorHex);
+			initialChapterName = "(" + colorName.toStdString() + ") " + initialChapterName;
+		}
+		obs_frontend_recording_add_chapter(initialChapterName.c_str());
+		
 		if (!g_enableComments) {
-			string finalChapterName = hk->getChapterName();
-			if (!g_pendingColorHex.isEmpty() && g_pendingColorHex != "none") {
-				QString colorName = getColorName(g_pendingColorHex);
-				finalChapterName = "(" + colorName.toStdString() + ") " + finalChapterName;
-			}
-			obs_frontend_recording_add_chapter(finalChapterName.c_str());
 			return;
 		}
 		
@@ -444,18 +447,6 @@ static void ShowCommentDialog()
 		nameInput, 
 		commentInput,
 		g_pendingChapterName);
-
-	if (accepted) {
-		string finalChapterName = nameInput;
-		if (!commentInput.empty()) {
-			finalChapterName = nameInput + "@" + commentInput;
-		}
-		if (!g_pendingColorHex.isEmpty() && g_pendingColorHex != "none") {
-			QString colorName = getColorName(g_pendingColorHex);
-			finalChapterName = "(" + colorName.toStdString() + ") " + finalChapterName;
-		}
-		obs_frontend_recording_add_chapter(finalChapterName.c_str());
-	}
 }
 
 QVariant ChapterHotkeyItem::data(int role) const
@@ -510,16 +501,20 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	layout->addWidget(nameLabel);
 
 	nameCombo = new QComboBox(this);
+	nameCombo->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 	layout->addWidget(nameCombo);
 
 	commentLabel = new QLabel("注释:", this);
 	layout->addWidget(commentLabel);
 
-	commentInput = new QLineEdit(this);
+	commentInput = new QTextEdit(this);
+	commentInput->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+	commentInput->setMinimumHeight(80);
 	layout->addWidget(commentInput);
 
 	QDialogButtonBox *buttonbox = new QDialogButtonBox(
 		QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+	buttonbox->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 	layout->addWidget(buttonbox);
 	buttonbox->setCenterButtons(true);
 	connect(buttonbox, &QDialogButtonBox::accepted, this, &QDialog::accept);
@@ -618,7 +613,7 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 		selectedName.remove(colorPattern);
 	}
 	nameInput = selectedName.toUtf8().constData();
-	commentInput = dialog.commentInput->text().toUtf8().constData();
+	commentInput = dialog.commentInput->toPlainText().toUtf8().constData();
 	CleanWhitespace(nameInput);
 	CleanWhitespace(commentInput);
 	return true;

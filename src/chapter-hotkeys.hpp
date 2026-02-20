@@ -11,6 +11,7 @@
 #include <QDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QTextEdit>
 #include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QListWidgetItem>
@@ -105,7 +106,7 @@ private:
 	QLabel *nameLabel;
 	QLabel *commentLabel;
 	QComboBox *nameCombo;
-	QLineEdit *commentInput;
+	QTextEdit *commentInput;
 };
 
 class ChapterNameDialog : public QDialog {
