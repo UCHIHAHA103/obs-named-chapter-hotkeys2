@@ -488,7 +488,7 @@ void ChapterHotkeyItem::setData(int role, const QVariant &value)
 	}
 }
 
-ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(parent)
+ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(parent), label(nullptr)
 {
 	setModal(true);
 	setWindowModality(Qt::WindowModality::WindowModal);
@@ -498,6 +498,9 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 
 	QVBoxLayout *layout = new QVBoxLayout;
 	setLayout(layout);
+
+	label = new QLabel(this);
+	layout->addWidget(label);
 
 	nameLabel = new QLabel("标记名称:", this);
 	layout->addWidget(nameLabel);
