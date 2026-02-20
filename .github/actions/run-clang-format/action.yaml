@@ -43,6 +43,8 @@ runs:
         : Run clang-format 🐉
         if (( ${+RUNNER_DEBUG} )) setopt XTRACE
 
+        chmod +x ./build-aux/run-clang-format
+
         local -a changes=($(git diff --name-only HEAD~1 HEAD))
         case ${GITHUB_EVENT_NAME} {
           pull_request) changes=($(git diff --name-only origin/${GITHUB_BASE_REF} HEAD)) ;;
