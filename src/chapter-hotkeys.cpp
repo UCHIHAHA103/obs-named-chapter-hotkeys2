@@ -7,6 +7,9 @@
 #include <QUuid>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QScreen>
+#include <QRect>
+#include <QGuiApplication>
 
 using namespace std;
 
@@ -291,6 +294,23 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 	
 	dialog.commentInput->setFocus();
 
+	// 居中对话框
+	dialog.adjustSize(); // 确保布局完成
+	if (parent) {
+		QScreen *screen = parent->screen();
+		if (screen) {
+			QRect screenGeometry = screen->geometry();
+			dialog.move(screenGeometry.center() - QPoint(dialog.width() / 2, dialog.height() / 2));
+		}
+	} else {
+		// 如果没有父窗口，使用主屏幕
+		QScreen *screen = QGuiApplication::primaryScreen();
+		if (screen) {
+			QRect screenGeometry = screen->geometry();
+			dialog.move(screenGeometry.center() - QPoint(dialog.width() / 2, dialog.height() / 2));
+		}
+	}
+
 	if (dialog.exec() != QDialog::Accepted) {
 		return false;
 	}
@@ -336,6 +356,23 @@ bool ChapterNameDialog::AskForName(QWidget *parent, const QString &title,
 	dialog.label->setText(text);
 	dialog.input->setText(placeHolder);
 	dialog.input->selectAll();
+
+	// 居中对话框
+	dialog.adjustSize(); // 确保布局完成
+	if (parent) {
+		QScreen *screen = parent->screen();
+		if (screen) {
+			QRect screenGeometry = screen->geometry();
+			dialog.move(screenGeometry.center() - QPoint(dialog.width() / 2, dialog.height() / 2));
+		}
+	} else {
+		// 如果没有父窗口，使用主屏幕
+		QScreen *screen = QGuiApplication::primaryScreen();
+		if (screen) {
+			QRect screenGeometry = screen->geometry();
+			dialog.move(screenGeometry.center() - QPoint(dialog.width() / 2, dialog.height() / 2));
+		}
+	}
 
 	if (dialog.exec() != QDialog::Accepted)
 		return false;
