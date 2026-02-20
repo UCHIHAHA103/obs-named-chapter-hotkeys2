@@ -21,6 +21,7 @@
 #include <QPixmap>
 #include <QPainter>
 #include <QMap>
+#include <QMessageBox>
 
 using namespace std;
 
@@ -52,14 +53,19 @@ static QString getColorName(const QString &colorHex)
 	return colorMap.value(colorHex.toLower(), "green");
 }
 
-static QColor getColorFromHex(const QString &colorNameOrHex)
+static QString getColorHex(const QString &colorNameOrHex)
 {
 	static QMap<QString, QString> colorMap = createColorMap();
-	QString hex = colorMap.value(colorNameOrHex.toLower(), colorNameOrHex);
-	if (!hex.startsWith("#")) {
-		hex = colorMap.value(hex, "#718637");
+	QString lower = colorNameOrHex.toLower();
+	if (lower.startsWith("#")) {
+		return lower;
 	}
-	return QColor(hex);
+	return colorMap.value(lower, "#718637");
+}
+
+static QColor getColorFromHex(const QString &colorNameOrHex)
+{
+	return QColor(getColorHex(colorNameOrHex));
 }
 
 ChapterHotkeyUI *hk_edit;
@@ -139,12 +145,48 @@ void ChapterHotkeyUI::on_actionRemoveHotkey_triggered()
 void ChapterHotkeyUI::on_actionRenameHotkey_triggered()
 {
 	auto item = ui->listWidget->currentItem();
+	if (!item) return;
+	
 	Qt::ItemFlags flags = item->flags();
-
 	item->setFlags(flags | Qt::ItemIsEditable);
 	ui->listWidget->editItem(item);
 	item->setFlags(flags);
-	ui->listWidget->sortItems();
+}
+
+void ChapterHotkeyUI::on_actionSetHotkey_triggered()
+{
+	auto item = ui->listWidget->currentItem();
+	if (!item) return;
+	
+	ChapterHotkeyItem *hkItem = dynamic_cast<ChapterHotkeyItem*>(item);
+	if (!hkItem) return;
+	
+	auto *window = static_cast<QMainWindow*>(obs_frontend_get_main_window());
+	QMessageBox msgBox(window);
+	msgBox.setWindowTitle(obs_module_text("ChapterHotkey.SetHotkey"));
+	msgBox.setText(QString("为 '%1' 设置快捷键\n\n请按下想要设置的快捷键组合\n当前快捷键: %2")
+		.arg(QString::fromStdString(hkItem->chapterName))
+		.arg(hkItem->getHotkeyText()));
+	msgBox.setInformativeText("点击确定后，在弹出的输入框中按下快捷键");
+	msgBox.setStandardButtons(QMessageBox::Ok | QMessageBox::Reset);
+	msgBox.setDefaultButton(QMessageBox::Ok);
+	
+	int ret = msgBox.exec();
+	
+	if (ret == QMessageBox::Reset) {
+		obs_hotkey_detach(hkItem->hotkey);
+		hkItem->updateDisplayText();
+		saveToExternalConfig();
+		return;
+	}
+	
+	if (ret == QMessageBox::Ok) {
+		QMessageBox keyBox(window);
+		keyBox.setWindowTitle(obs_module_text("ChapterHotkey.SetHotkey"));
+		keyBox.setText("请按下快捷键组合");
+		keyBox.setStandardButtons(QMessageBox::Cancel);
+		keyBox.exec();
+	}
 }
 
 void ChapterHotkeyUI::on_colorButtonGreen_clicked() { setSelectedItemColor("#718637"); }
@@ -161,6 +203,12 @@ void ChapterHotkeyUI::setSelectedItemColor(const QString &color)
 	auto item = ui->listWidget->currentItem();
 	if (item) {
 		item->setData(Color, color);
+		
+		ChapterHotkeyItem *hkItem = dynamic_cast<ChapterHotkeyItem*>(item);
+		if (hkItem) {
+			hkItem->updateDisplayText();
+		}
+		
 		saveToExternalConfig();
 	}
 }
@@ -342,6 +390,38 @@ void ChapterHotkeyItem::updateDisplayText()
 	} else {
 		setIcon(QIcon());
 	}
+	
+	setToolTip(QString("Hotkey: %1").arg(getHotkeyText()));
+}
+
+QString ChapterHotkeyItem::getHotkeyText() const
+{
+	obs_data_array_t *bindings = obs_hotkey_save(hotkey);
+	if (!bindings) return "None";
+	
+	size_t count = obs_data_array_count(bindings);
+	if (count == 0) {
+		obs_data_array_release(bindings);
+		return "None";
+	}
+	
+	QStringList keys;
+	for (size_t i = 0; i < count; i++) {
+		obs_data_t *binding = obs_data_array_item(bindings, i);
+		obs_data_t *key = obs_data_get_obj(binding, "key");
+		if (key) {
+			const char *keyText = obs_data_get_string(key, "text");
+			if (keyText && strlen(keyText) > 0) {
+				keys.append(QString::fromUtf8(keyText));
+			}
+			obs_data_release(key);
+		}
+		obs_data_release(binding);
+	}
+	obs_data_array_release(bindings);
+	
+	if (keys.isEmpty()) return "None";
+	return keys.join(" + ");
 }
 
 void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
