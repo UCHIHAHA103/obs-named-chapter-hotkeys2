@@ -415,6 +415,11 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 	auto hk = static_cast<ChapterHotkeyItem *>(_this);
 
 	if (pressed) {
+		// 如果注释窗口已打开，不创建任何标记
+		if (ChapterWithCommentDialog::IsDialogOpen()) {
+			return;
+		}
+		
 		g_pendingChapterName = QString::fromStdString(hk->getChapterName());
 		g_pendingColorHex = hk->getColor();
 		
@@ -427,11 +432,6 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 		obs_frontend_recording_add_chapter(initialChapterName.c_str());
 		
 		if (!g_enableComments) {
-			return;
-		}
-		
-		// 检查是否已有窗口打开
-		if (ChapterWithCommentDialog::IsDialogOpen()) {
 			return;
 		}
 		
@@ -455,11 +455,9 @@ static void ShowCommentDialog()
 		commentInput,
 		g_pendingChapterName);
 
-	if (accepted) {
+	if (accepted && !commentInput.empty()) {
 		string finalChapterName = nameInput;
-		if (!commentInput.empty()) {
-			finalChapterName = nameInput + "@" + commentInput;
-		}
+		finalChapterName = nameInput + "@" + commentInput;
 		if (!g_pendingColorHex.isEmpty() && g_pendingColorHex != "none") {
 			QString colorName = getColorName(g_pendingColorHex);
 			finalChapterName = "(" + colorName.toStdString() + ") " + finalChapterName;
@@ -546,6 +544,7 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 
 ChapterWithCommentDialog::~ChapterWithCommentDialog()
 {
+	saveWindowState();
 	s_isDialogOpen = false;
 }
 
