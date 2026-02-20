@@ -17,6 +17,9 @@
 #include <QDir>
 #include <QStandardPaths>
 #include <QRegularExpression>
+#include <QColor>
+#include <QPixmap>
+#include <QPainter>
 
 using namespace std;
 
@@ -63,13 +66,8 @@ QStringList ChapterHotkeyUI::GetAllChapterNames()
 		for (int i = 0; i < hk_edit->ui->listWidget->count(); i++) {
 			auto item = hk_edit->ui->listWidget->item(i);
 			QString name = item->data(Name).toString();
-			QString color = item->data(Color).toString();
 			if (!name.isEmpty()) {
-				QString displayName = name;
-				if (!color.isEmpty() && color != "none") {
-					displayName = QString("(%1) %2").arg(color).arg(name);
-				}
-				names.append(displayName);
+				names.append(name);
 			}
 		}
 	}
@@ -124,7 +122,7 @@ void ChapterHotkeyUI::setSelectedItemColor(const QString &color)
 	auto item = ui->listWidget->currentItem();
 	if (item) {
 		item->setData(Color, color);
-		ui->listWidget->sortItems();
+		saveToExternalConfig();
 	}
 }
 
@@ -133,12 +131,16 @@ QString ChapterHotkeyUI::getExternalConfigPath()
 	QString userProfile = qgetenv("USERPROFILE");
 	if (userProfile.isEmpty()) {
 		userProfile = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+		blog(LOG_WARNING, "USERPROFILE not found, using Documents: %s", qPrintable(userProfile));
 	}
 	QDir dataDir(userProfile + "/VideoMarkerExtractor_Data");
 	if (!dataDir.exists()) {
-		dataDir.mkpath(".");
+		bool created = dataDir.mkpath(".");
+		blog(LOG_INFO, "Creating config directory: %s, success: %d", qPrintable(dataDir.path()), created);
 	}
-	return dataDir.filePath("chapter-markers-config.json");
+	QString configPath = dataDir.filePath("chapter-markers-config.json");
+	blog(LOG_INFO, "External config path: %s", qPrintable(configPath));
+	return configPath;
 }
 
 void ChapterHotkeyUI::saveToExternalConfig()
@@ -173,6 +175,9 @@ void ChapterHotkeyUI::saveToExternalConfig()
 	if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
 		configFile.write(doc.toJson(QJsonDocument::Indented));
 		configFile.close();
+		blog(LOG_INFO, "External config saved successfully to: %s", qPrintable(configFile.fileName()));
+	} else {
+		blog(LOG_ERROR, "Failed to open config file for writing: %s", qPrintable(configFile.fileName()));
 	}
 }
 
@@ -226,8 +231,6 @@ void ChapterHotkeyUI::LoadHotkeys(obs_data_t *data)
 
 		obs_data_item_next(&item);
 	}
-
-	ui->listWidget->sortItems();
 }
 
 void ChapterHotkeyUI::SaveHotkeys(obs_data_t *data)
@@ -283,12 +286,23 @@ ChapterHotkeyItem::~ChapterHotkeyItem()
 
 void ChapterHotkeyItem::updateDisplayText()
 {
-	QString displayText = QString::fromStdString(chapterName);
+	setText(QString::fromStdString(chapterName));
+	
 	if (!color.isEmpty() && color != "none") {
-		// 添加颜色前缀
-		displayText = QString("(%1) %2").arg(color).arg(displayText);
+		QColor circleColor(color);
+		int diameter = 12;
+		QPixmap pixmap(diameter, diameter);
+		pixmap.fill(Qt::transparent);
+		QPainter painter(&pixmap);
+		painter.setRenderHint(QPainter::Antialiasing);
+		painter.setBrush(circleColor);
+		painter.setPen(QPen(QColor("#333333"), 1));
+		painter.drawEllipse(0, 0, diameter - 1, diameter - 1);
+		painter.end();
+		setIcon(QIcon(pixmap));
+	} else {
+		setIcon(QIcon());
 	}
-	setText(displayText);
 }
 
 void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,

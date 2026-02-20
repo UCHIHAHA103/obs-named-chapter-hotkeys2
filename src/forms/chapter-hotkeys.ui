@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>393</width>
-    <height>440</height>
+    <height>410</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -37,86 +37,113 @@
    <item>
     <widget class="QWidget" name="colorButtonsWidget">
      <property name="maximumHeight">
-      <number>40</number>
+      <number>24</number>
      </property>
      <layout class="QHBoxLayout" name="horizontalLayout_2">
+      <property name="spacing">
+       <number>4</number>
+      </property>
       <item>
        <widget class="QPushButton" name="colorButtonGreen">
-        <property name="text">
-         <string>绿色</string>
+        <property name="maximumSize">
+         <size>
+          <width>24</width>
+          <height>24</height>
+         </size>
         </property>
         <property name="styleSheet">
-         <string notr="true">background-color: green; color: white;</string>
+         <string notr="true">QPushButton { background-color: green; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid white; }</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="QPushButton" name="colorButtonRed">
-        <property name="text">
-         <string>红色</string>
+        <property name="maximumSize">
+         <size>
+          <width>24</width>
+          <height>24</height>
+         </size>
         </property>
         <property name="styleSheet">
-         <string notr="true">background-color: red; color: white;</string>
+         <string notr="true">QPushButton { background-color: red; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid white; }</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="QPushButton" name="colorButtonPurple">
-        <property name="text">
-         <string>紫色</string>
+        <property name="maximumSize">
+         <size>
+          <width>24</width>
+          <height>24</height>
+         </size>
         </property>
         <property name="styleSheet">
-         <string notr="true">background-color: purple; color: white;</string>
+         <string notr="true">QPushButton { background-color: purple; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid white; }</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="QPushButton" name="colorButtonOrange">
-        <property name="text">
-         <string>橙色</string>
+        <property name="maximumSize">
+         <size>
+          <width>24</width>
+          <height>24</height>
+         </size>
         </property>
         <property name="styleSheet">
-         <string notr="true">background-color: orange; color: white;</string>
+         <string notr="true">QPushButton { background-color: orange; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid white; }</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="QPushButton" name="colorButtonYellow">
-        <property name="text">
-         <string>黄色</string>
+        <property name="maximumSize">
+         <size>
+          <width>24</width>
+          <height>24</height>
+         </size>
         </property>
         <property name="styleSheet">
-         <string notr="true">background-color: yellow; color: black;</string>
+         <string notr="true">QPushButton { background-color: yellow; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid black; }</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="QPushButton" name="colorButtonWhite">
-        <property name="text">
-         <string>白色</string>
+        <property name="maximumSize">
+         <size>
+          <width>24</width>
+          <height>24</height>
+         </size>
         </property>
         <property name="styleSheet">
-         <string notr="true">background-color: white; color: black; border: 1px solid gray;</string>
+         <string notr="true">QPushButton { background-color: white; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid black; }</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="QPushButton" name="colorButtonBlue">
-        <property name="text">
-         <string>蓝色</string>
+        <property name="maximumSize">
+         <size>
+          <width>24</width>
+          <height>24</height>
+         </size>
         </property>
         <property name="styleSheet">
-         <string notr="true">background-color: blue; color: white;</string>
+         <string notr="true">QPushButton { background-color: blue; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid white; }</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="QPushButton" name="colorButtonCyan">
-        <property name="text">
-         <string>青色</string>
+        <property name="maximumSize">
+         <size>
+          <width>24</width>
+          <height>24</height>
+         </size>
         </property>
         <property name="styleSheet">
-         <string notr="true">background-color: cyan; color: black;</string>
+         <string notr="true">QPushButton { background-color: cyan; border-radius: 12px; border: 1px solid #333; } QPushButton:hover { border: 2px solid black; }</string>
         </property>
        </widget>
       </item>
