@@ -284,6 +284,49 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 	return true;
 }
 
+ChapterNameDialog::ChapterNameDialog(QWidget *parent) : QDialog(parent)
+{
+	setModal(true);
+	setWindowModality(Qt::WindowModality::WindowModal);
+	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+	setFixedWidth(400);
+	setMinimumHeight(100);
+
+	QVBoxLayout *layout = new QVBoxLayout;
+	setLayout(layout);
+
+	label = new QLabel(this);
+	layout->addWidget(label);
+
+	input = new QLineEdit(this);
+	layout->addWidget(input);
+
+	QDialogButtonBox *buttonbox = new QDialogButtonBox(
+		QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+	layout->addWidget(buttonbox);
+	buttonbox->setCenterButtons(true);
+	connect(buttonbox, &QDialogButtonBox::accepted, this, &QDialog::accept);
+	connect(buttonbox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+}
+
+bool ChapterNameDialog::AskForName(QWidget *parent, const QString &title,
+				   const QString &text, std::string &name,
+				   const QString &placeHolder)
+{
+	ChapterNameDialog dialog(parent);
+	dialog.setWindowTitle(title);
+	dialog.label->setText(text);
+	dialog.input->setText(placeHolder);
+	dialog.input->selectAll();
+
+	if (dialog.exec() != DialogCode::Accepted)
+		return false;
+
+	name = dialog.input->text().toUtf8().constData();
+	CleanWhitespace(name);
+	return true;
+}
+
 static void LoadSaveHotkeys(obs_data_t *save_data, bool saving, void *)
 {
 	if (saving) {
