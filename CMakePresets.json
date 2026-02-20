@@ -27,11 +27,12 @@
       },
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
-      "toolset": "host=x64",
+      "toolset": "v143,host=x64",
       "warnings": {"dev": true, "deprecated": true},
       "cacheVariables": {
         "QT_VERSION": "6",
-        "CMAKE_SYSTEM_VERSION": "10.0"
+        "CMAKE_SYSTEM_VERSION": "10.0",
+        "CMAKE_VS_WINRT_BY_DEFAULT": "OFF"
       }
     },
     {

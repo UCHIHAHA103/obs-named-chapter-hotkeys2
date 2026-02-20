@@ -117,82 +117,22 @@ function Build {
             '--config', $Configuration
         )
 
-        # 确保Visual Studio环境已设置，以便CMake能找到生成器
+        # GitHub Actions的windows-2022 runner已经预装了Visual Studio 2022并正确配置了环境
+        # 我们不需要手动设置环境变量，CMake应该能够自动检测到Visual Studio
         Write-Host "=== Visual Studio环境检测 ===" -ForegroundColor Cyan
+        Write-Host "GitHub Actions windows-2022 runner已预装Visual Studio 2022" -ForegroundColor Green
         
-        # 方法1：尝试使用VsDevCmd.bat设置环境
-        $vsDevCmdPath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"
-        if (!(Test-Path $vsDevCmdPath)) {
-            $vsDevCmdPath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Professional\Common7\Tools\VsDevCmd.bat"
-        }
-        if (!(Test-Path $vsDevCmdPath)) {
-            $vsDevCmdPath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat"
-        }
-        
-        if (Test-Path $vsDevCmdPath) {
-            Write-Host "找到VsDevCmd.bat: $vsDevCmdPath" -ForegroundColor Green
-            # 使用VsDevCmd.bat设置环境变量
-            cmd.exe /c "`"$vsDevCmdPath`" -arch=x64 -host_arch=x64 && set" | ForEach-Object {
-                if ($_ -match "^(.*?)=(.*)$") {
-                    $name = $matches[1]
-                    $value = $matches[2]
-                    [Environment]::SetEnvironmentVariable($name, $value)
-                }
-            }
-            Write-Host "已使用VsDevCmd.bat设置Visual Studio环境" -ForegroundColor Green
-        } else {
-            Write-Host "未找到VsDevCmd.bat，使用vswhere检测" -ForegroundColor Yellow
-        }
-        
-        # 方法2：使用vswhere检测Visual Studio（备用方法）
-        if (Test-Path "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe") {
-            $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -prerelease -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-            if ($vsPath) {
-                Write-Host "Visual Studio found at: $vsPath" -ForegroundColor Green
-                
-                # 设置Visual Studio路径环境变量，帮助CMake找到Visual Studio
-                $env:VSINSTALLDIR = $vsPath
-                $env:VCTargetsPath = Join-Path $vsPath "MSBuild\Microsoft\VC\v170"
-                $env:CMAKE_GENERATOR_INSTANCE = $vsPath
-                
-                # 将Visual Studio工具添加到PATH
-                $vcToolsPath = Join-Path $vsPath "VC\Tools\MSVC"
-                if (Test-Path $vcToolsPath) {
-                    $vcVersionDirs = Get-ChildItem -Path $vcToolsPath -Directory | Sort-Object Name -Descending
-                    if ($vcVersionDirs.Count -gt 0) {
-                        $latestVcPath = $vcVersionDirs[0].FullName
-                        $env:PATH = "$latestVcPath\bin\Hostx64\x64;$env:PATH"
-                        Write-Host "已添加VC工具到PATH: $latestVcPath\bin\Hostx64\x64" -ForegroundColor Green
-                    }
-                }
-            } else {
-                Write-Warning "vswhere未找到Visual Studio安装"
-            }
-        } else {
-            Write-Warning "未找到vswhere.exe"
-        }
-        
-        # 打印关键环境变量用于调试
-        Write-Host "`n=== 关键环境变量 ===" -ForegroundColor Cyan
-        $envVars = @("VSINSTALLDIR", "VCTargetsPath", "CMAKE_GENERATOR_INSTANCE", "PATH")
-        foreach ($var in $envVars) {
-            $value = [Environment]::GetEnvironmentVariable($var)
-            if ($value) {
-                Write-Host "$var = $value" -ForegroundColor Gray
-            } else {
-                Write-Host "$var = (未设置)" -ForegroundColor Yellow
-            }
-        }
-        
-        # 检查CMake是否能找到Visual Studio生成器
-        Write-Host "`n=== 测试CMake生成器 ===" -ForegroundColor Cyan
+        # 简单验证CMake是否能找到Visual Studio生成器
+        Write-Host "`n=== 验证CMake生成器 ===" -ForegroundColor Cyan
         try {
-            $genInfo = cmake --help | Select-String "Visual Studio"
+            $genInfo = cmake --help | Select-String "Visual Studio 17 2022"
             if ($genInfo) {
-                Write-Host "CMake支持以下Visual Studio生成器:" -ForegroundColor Green
-                $genInfo | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+                Write-Host "✓ CMake支持Visual Studio 17 2022生成器" -ForegroundColor Green
             } else {
-                Write-Warning "CMake未找到Visual Studio生成器"
+                Write-Warning "CMake未找到Visual Studio 17 2022生成器"
+                # 列出所有可用的生成器用于调试
+                Write-Host "可用的CMake生成器:" -ForegroundColor Yellow
+                cmake --help | Select-String "^\s*\*" | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
             }
         } catch {
             Write-Warning "无法检查CMake生成器: $_"
