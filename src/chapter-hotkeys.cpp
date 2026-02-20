@@ -1,4 +1,4 @@
-#include "chapter-hotkeys-optimized.hpp"
+#include "chapter-hotkeys.hpp"
 
 
 #include <QAction>
