@@ -22,7 +22,7 @@
 #include <QPainter>
 #include <QMap>
 #include <QMessageBox>
-#include <QMetaObject>
+#include <QTimer>
 
 using namespace std;
 
@@ -418,9 +418,9 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 			return;
 		}
 		
-		QMetaObject::invokeMethod([]() {
+		QTimer::singleShot(0, []() {
 			ShowCommentDialog();
-		}, Qt::QueuedConnection);
+		});
 	}
 }
 
