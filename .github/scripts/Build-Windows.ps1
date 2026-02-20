@@ -112,6 +112,30 @@ function Build {
             '--config', $Configuration
         )
 
+        # 确保Visual Studio环境已设置，以便CMake能找到生成器
+        if (Test-Path "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe") {
+            $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -prerelease -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            if ($vsPath) {
+                # 设置Visual Studio路径环境变量，帮助CMake找到Visual Studio
+                $env:VSINSTALLDIR = $vsPath
+                $env:VCTargetsPath = Join-Path $vsPath "MSBuild\Microsoft\VC\v170"
+                Write-Host "Visual Studio found at: $vsPath" -ForegroundColor Green
+                
+                # 设置CMAKE_GENERATOR_INSTANCE环境变量
+                $env:CMAKE_GENERATOR_INSTANCE = $vsPath
+                
+                # 将Visual Studio工具添加到PATH
+                $vcToolsPath = Join-Path $vsPath "VC\Tools\MSVC"
+                if (Test-Path $vcToolsPath) {
+                    $vcVersionDirs = Get-ChildItem -Path $vcToolsPath -Directory | Sort-Object Name -Descending
+                    if ($vcVersionDirs.Count -gt 0) {
+                        $latestVcPath = $vcVersionDirs[0].FullName
+                        $env:PATH = "$latestVcPath\bin\Hostx64\x64;$env:PATH"
+                    }
+                }
+            }
+        }
+
         Log-Group "Configuring ${ProductName}..."
         Invoke-External cmake @CmakeArgs
 
