@@ -95,6 +95,8 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 {
 	ui->setupUi(this);
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+	setMinimumWidth(393);
+	resize(393, 410);
 	ui->listWidget->setSortingEnabled(true);
 
 	QVBoxLayout *mainLayout = qobject_cast<QVBoxLayout *>(layout());
