@@ -518,15 +518,18 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 
 	nameLabel = new QLabel("标记名称:", this);
 	nameLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+	nameLabel->setMinimumHeight(24);
 	layout->addWidget(nameLabel);
 
 	nameCombo = new QComboBox(this);
 	nameCombo->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 	nameCombo->setMinimumHeight(28);
+	nameCombo->setMaximumHeight(28);
 	layout->addWidget(nameCombo);
 
 	commentLabel = new QLabel("注释:", this);
 	commentLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+	commentLabel->setMinimumHeight(24);
 	layout->addWidget(commentLabel);
 
 	commentInput = new QTextEdit(this);
@@ -539,6 +542,7 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	QDialogButtonBox *buttonbox = new QDialogButtonBox(
 		QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
 	buttonbox->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+	buttonbox->setMinimumHeight(40);
 	layout->addWidget(buttonbox);
 	buttonbox->setCenterButtons(true);
 	connect(buttonbox, &QDialogButtonBox::accepted, this, &QDialog::accept);
