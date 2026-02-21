@@ -467,7 +467,7 @@ static void ShowCommentDialog()
 		nameInput, 
 		commentInput,
 		g_pendingChapterName,
-		selectedColor); // 传入引用以获取选中的颜色
+		&selectedColor); // 传入指针以获取选中的颜色
 
 	if (accepted) {
 		string finalChapterName = nameInput;
