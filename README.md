@@ -1,4 +1,36 @@
-# Named Chapter Hotkeys111
+# 标记快捷键 (Named Chapter Hotkeys)
 
-This plugin adds a new tool window to specify addition chapter hotkeys with custom names.
+OBS Studio 插件，为视频章节添加带自定义名称的快捷键。
 
+## 功能特性
+
+- ✅ 添加、删除、重命名章节快捷键
+- ✅ 自定义颜色标记
+- ✅ 带注释的标记功能
+- ✅ 回车确认，Shift+回车换行
+- ✅ 记忆窗口位置和大小
+- ✅ 记忆窗口所在显示器
+- ✅ 中文界面
+
+## 注释窗口快捷键
+
+| 操作 | 快捷键 |
+|------|--------|
+| 确认并关闭 | 回车 |
+| 换行 | Shift + 回车 |
+
+## 使用方法
+
+1. 在 OBS 菜单中打开「标记快捷键」窗口
+2. 添加、重命名或删除章节快捷键
+3. 选择颜色（可选）
+4. 勾选「启用标记注释」添加带注释的标记
+5. 点击「确定」保存
+
+## 构建
+
+详见 GitHub Actions 工作流程。
+
+## 许可证
+
+MIT License
