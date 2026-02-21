@@ -1,6 +1,7 @@
 #include "chapter-hotkeys.hpp"
 
 #include <QAction>
+#include <QKeyEvent>
 #include <QMainWindow>
 #include <QObject>
 #include <QMenu>
