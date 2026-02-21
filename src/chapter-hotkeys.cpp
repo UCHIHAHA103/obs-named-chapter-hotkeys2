@@ -509,7 +509,7 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	setWindowModality(Qt::WindowModality::WindowModal);
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint | Qt::WindowStaysOnTopHint);
 	setFixedWidth(400);
-	setMinimumHeight(180);
+	setMinimumHeight(120);
 
 	QVBoxLayout *layout = new QVBoxLayout;
 	setLayout(layout);
@@ -528,6 +528,7 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	commentInput->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
 	commentInput->setMinimumHeight(30);
 	commentInput->setMaximumHeight(500);
+	commentInput->installEventFilter(this);
 	layout->addWidget(commentInput);
 
 	QDialogButtonBox *buttonbox = new QDialogButtonBox(
@@ -552,6 +553,23 @@ void ChapterWithCommentDialog::closeEvent(QCloseEvent *event)
 {
 	saveWindowState();
 	QDialog::closeEvent(event);
+}
+
+bool ChapterWithCommentDialog::eventFilter(QObject *obj, QEvent *event)
+{
+	if (obj == commentInput && event->type() == QEvent::KeyPress) {
+		QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+		if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
+			if (keyEvent->modifiers() & Qt::ShiftModifier) {
+				commentInput->textCursor().insertText("\n");
+				return true;
+			} else {
+				accept();
+				return true;
+			}
+		}
+	}
+	return QDialog::eventFilter(obj, event);
 }
 
 void ChapterWithCommentDialog::saveWindowState()
