@@ -510,23 +510,26 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	setWindowModality(Qt::WindowModality::WindowModal);
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint | Qt::WindowStaysOnTopHint);
 	setFixedWidth(400);
-	setMinimumHeight(222);
-	resize(400, 280);
+	setMinimumHeight(180);
+	resize(400, 230);
 
 	QVBoxLayout *layout = new QVBoxLayout;
 	setLayout(layout);
 	layout->setSpacing(6);
 	layout->setContentsMargins(12, 12, 12, 12);
 
+	QHBoxLayout *nameRowLayout = new QHBoxLayout;
 	nameLabel = new QLabel("标记名称:", this);
 	nameLabel->setFixedHeight(20);
 	nameLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-	layout->addWidget(nameLabel);
+	nameRowLayout->addWidget(nameLabel);
 
 	nameCombo = new QComboBox(this);
 	nameCombo->setFixedHeight(28);
 	nameCombo->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-	layout->addWidget(nameCombo);
+	nameRowLayout->addWidget(nameCombo, 1);
+
+	layout->addLayout(nameRowLayout);
 
 	commentLabel = new QLabel("注释:", this);
 	commentLabel->setFixedHeight(20);
