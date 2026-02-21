@@ -538,13 +538,13 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	commentInput->setMinimumHeight(60);
 	commentInput->setMaximumHeight(600);
 	commentInput->installEventFilter(this);
-	layout->addWidget(commentInput, 1, 0);
+	layout->addWidget(commentInput, 1);
 
 	QDialogButtonBox *buttonbox = new QDialogButtonBox(
 		QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
 	buttonbox->setFixedHeight(40);
 	buttonbox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-	layout->addWidget(buttonbox, 0, 0);
+	layout->addWidget(buttonbox);
 	buttonbox->setCenterButtons(true);
 	connect(buttonbox, &QDialogButtonBox::accepted, this, &QDialog::accept);
 	connect(buttonbox, &QDialogButtonBox::rejected, this, &QDialog::reject);
