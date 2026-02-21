@@ -101,7 +101,8 @@ public:
 	static bool AskForNameAndComment(QWidget *parent, const QString &title,
 					const QString &text, std::string &nameInput,
 					std::string &commentInput,
-					const QString &placeHolder = QString(""));
+					const QString &placeHolder = QString(""),
+					QString &colorInput = QString(""));
 	static bool IsDialogOpen() { return s_isDialogOpen; }
 
 protected:

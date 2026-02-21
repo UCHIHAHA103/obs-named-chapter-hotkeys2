@@ -457,6 +457,7 @@ static void ShowCommentDialog()
 {
 	string nameInput = g_pendingChapterName.toStdString();
 	string commentInput;
+	QString selectedColor = g_pendingColorHex; // 默认使用触发时的颜色
 	
 	auto window = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 	bool accepted = ChapterWithCommentDialog::AskForNameAndComment(
@@ -465,7 +466,8 @@ static void ShowCommentDialog()
 		"", 
 		nameInput, 
 		commentInput,
-		g_pendingChapterName);
+		g_pendingChapterName,
+		selectedColor); // 传入引用以获取选中的颜色
 
 	if (accepted) {
 		string finalChapterName = nameInput;
@@ -475,8 +477,10 @@ static void ShowCommentDialog()
 		} else {
 			finalChapterName = nameInput + "@";
 		}
-		if (!g_pendingColorHex.isEmpty() && g_pendingColorHex != "none") {
-			QString colorName = getColorName(g_pendingColorHex);
+		
+		// 使用选中的颜色（如果用户在下拉框中选择了不同的标记，颜色也会随之改变）
+		if (!selectedColor.isEmpty() && selectedColor != "none") {
+			QString colorName = getColorName(selectedColor);
 			finalChapterName = "(" + colorName.toStdString() + ") " + finalChapterName;
 		}
 		obs_frontend_recording_add_chapter(finalChapterName.c_str());
@@ -707,7 +711,8 @@ static void CleanWhitespace(std::string &str)
 bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QString &title,
 						   const QString &text, std::string &nameInput,
 						   std::string &commentInput,
-						   const QString &placeHolder)
+						   const QString &placeHolder,
+						   QString &colorInput)
 {
 	ChapterWithCommentDialog dialog(parent);
 	dialog.setWindowTitle(title);
@@ -735,6 +740,7 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 					icon = QIcon(pixmap);
 				}
 				dialog.nameCombo->addItem(icon, name, name); // 设置原始名称为项数据
+				dialog.nameCombo->setItemData(dialog.nameCombo->count() - 1, color, Qt::UserRole + 1); // 存储颜色
 			}
 		}
 	}
@@ -776,6 +782,9 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 
 	// 获取原始名称（从项数据），如果项数据为空则使用显示文本
 	QString selectedName = dialog.nameCombo->currentData().toString();
+	// 获取选中的颜色
+	colorInput = dialog.nameCombo->currentData(Qt::UserRole + 1).toString();
+	
 	if (selectedName.isEmpty()) {
 		selectedName = dialog.nameCombo->currentText();
 		// 尝试移除颜色前缀
