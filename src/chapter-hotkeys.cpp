@@ -227,11 +227,44 @@ void ChapterHotkeyUI::saveToExternalConfig()
 			static_cast<obs_data_array_t *>(
 				item->data(Bindings).value<void *>());
 		
+		// 解析快捷键
+		QString hotkeyStr;
+		if (bindings) {
+			size_t count = obs_data_array_count(bindings);
+			if (count > 0) {
+				obs_data_t *binding = obs_data_array_item(bindings, 0);
+				if (binding) {
+					const char *key = obs_data_get_string(binding, "key");
+					bool shift = obs_data_get_bool(binding, "shift");
+					bool control = obs_data_get_bool(binding, "control");
+					bool alt = obs_data_get_bool(binding, "alt");
+					bool command = obs_data_get_bool(binding, "command");
+					
+					QStringList parts;
+					if (control) parts << "Ctrl";
+					if (shift) parts << "Shift";
+					if (alt) parts << "Alt";
+					if (command) parts << "Cmd";
+					if (key && *key) {
+						QString keyStr = QString(key).toUpper();
+						if (keyStr.startsWith("OBS_KEY_")) {
+							keyStr = keyStr.mid(8);
+						}
+						parts << keyStr;
+					}
+					
+					hotkeyStr = parts.join("+");
+					obs_data_release(binding);
+				}
+			}
+		}
+
 		// 外部配置文件不需要绑定信息，PR插件只需要名称和颜色
 		QJsonObject markerObj;
 		markerObj["name"] = name;
 		markerObj["uuid"] = uuid;
 		markerObj["color"] = color;
+		markerObj["hotkey"] = hotkeyStr;
 		
 		markersArray.append(markerObj);
 	}
