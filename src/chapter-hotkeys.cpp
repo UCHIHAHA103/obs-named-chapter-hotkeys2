@@ -510,24 +510,28 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	setWindowModality(Qt::WindowModality::WindowModal);
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint | Qt::WindowStaysOnTopHint);
 	setFixedWidth(400);
-	setMinimumHeight(120);
+	setMinimumHeight(150);
+	resize(400, 180);
 
 	QVBoxLayout *layout = new QVBoxLayout;
 	setLayout(layout);
 
 	nameLabel = new QLabel("标记名称:", this);
+	nameLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 	layout->addWidget(nameLabel);
 
 	nameCombo = new QComboBox(this);
 	nameCombo->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+	nameCombo->setMinimumHeight(28);
 	layout->addWidget(nameCombo);
 
 	commentLabel = new QLabel("注释:", this);
+	commentLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 	layout->addWidget(commentLabel);
 
 	commentInput = new QTextEdit(this);
 	commentInput->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
-	commentInput->setMinimumHeight(30);
+	commentInput->setMinimumHeight(50);
 	commentInput->setMaximumHeight(500);
 	commentInput->installEventFilter(this);
 	layout->addWidget(commentInput);
