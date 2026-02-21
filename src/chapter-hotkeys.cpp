@@ -520,26 +520,31 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 
 	nameLabel = new QLabel("标记名称:", this);
 	nameLabel->setFixedHeight(20);
+	nameLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 	layout->addWidget(nameLabel);
 
 	nameCombo = new QComboBox(this);
 	nameCombo->setFixedHeight(28);
+	nameCombo->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 	layout->addWidget(nameCombo);
 
 	commentLabel = new QLabel("注释:", this);
 	commentLabel->setFixedHeight(20);
+	commentLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 	layout->addWidget(commentLabel);
 
 	commentInput = new QTextEdit(this);
+	commentInput->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 	commentInput->setMinimumHeight(60);
-	commentInput->setMaximumHeight(500);
+	commentInput->setMaximumHeight(600);
 	commentInput->installEventFilter(this);
-	layout->addWidget(commentInput, 1);
+	layout->addWidget(commentInput, 1, 0);
 
 	QDialogButtonBox *buttonbox = new QDialogButtonBox(
 		QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
 	buttonbox->setFixedHeight(40);
-	layout->addWidget(buttonbox);
+	buttonbox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+	layout->addWidget(buttonbox, 0, 0);
 	buttonbox->setCenterButtons(true);
 	connect(buttonbox, &QDialogButtonBox::accepted, this, &QDialog::accept);
 	connect(buttonbox, &QDialogButtonBox::rejected, this, &QDialog::reject);
