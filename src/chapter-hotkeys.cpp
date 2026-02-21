@@ -510,39 +510,35 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	setWindowModality(Qt::WindowModality::WindowModal);
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint | Qt::WindowStaysOnTopHint);
 	setFixedWidth(400);
-	setMinimumHeight(150);
-	resize(400, 180);
+	setMinimumHeight(180);
+	resize(400, 220);
 
 	QVBoxLayout *layout = new QVBoxLayout;
 	setLayout(layout);
+	layout->setSpacing(6);
+	layout->setContentsMargins(12, 12, 12, 12);
 
 	nameLabel = new QLabel("标记名称:", this);
-	nameLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-	nameLabel->setMinimumHeight(24);
+	nameLabel->setFixedHeight(20);
 	layout->addWidget(nameLabel);
 
 	nameCombo = new QComboBox(this);
-	nameCombo->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-	nameCombo->setMinimumHeight(28);
-	nameCombo->setMaximumHeight(28);
+	nameCombo->setFixedHeight(28);
 	layout->addWidget(nameCombo);
 
 	commentLabel = new QLabel("注释:", this);
-	commentLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-	commentLabel->setMinimumHeight(24);
+	commentLabel->setFixedHeight(20);
 	layout->addWidget(commentLabel);
 
 	commentInput = new QTextEdit(this);
-	commentInput->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
-	commentInput->setMinimumHeight(50);
+	commentInput->setMinimumHeight(60);
 	commentInput->setMaximumHeight(500);
 	commentInput->installEventFilter(this);
-	layout->addWidget(commentInput);
+	layout->addWidget(commentInput, 1);
 
 	QDialogButtonBox *buttonbox = new QDialogButtonBox(
 		QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-	buttonbox->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-	buttonbox->setMinimumHeight(40);
+	buttonbox->setFixedHeight(40);
 	layout->addWidget(buttonbox);
 	buttonbox->setCenterButtons(true);
 	connect(buttonbox, &QDialogButtonBox::accepted, this, &QDialog::accept);
