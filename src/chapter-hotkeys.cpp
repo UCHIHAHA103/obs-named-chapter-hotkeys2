@@ -426,17 +426,26 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 		g_pendingChapterName = QString::fromStdString(hk->getChapterName());
 		g_pendingColorHex = hk->getColor();
 		
-		// 先在触发快捷键时立即添加标记（不带注释），确保时间点是触发时的时间
+		// 判断是否启用注释功能
+		if (!g_enableComments) {
+			// 未启用注释功能：直接添加普通标记
+			string chapterName = hk->getChapterName();
+			if (!g_pendingColorHex.isEmpty() && g_pendingColorHex != "none") {
+				QString colorName = getColorName(g_pendingColorHex);
+				chapterName = "(" + colorName.toStdString() + ") " + chapterName;
+			}
+			obs_frontend_recording_add_chapter(chapterName.c_str());
+			return;
+		}
+		
+		// 启用注释功能：添加带@后缀的标记，用于与普通标记区分
 		string initialChapterName = hk->getChapterName();
+		initialChapterName = initialChapterName + "@";
 		if (!g_pendingColorHex.isEmpty() && g_pendingColorHex != "none") {
 			QString colorName = getColorName(g_pendingColorHex);
 			initialChapterName = "(" + colorName.toStdString() + ") " + initialChapterName;
 		}
 		obs_frontend_recording_add_chapter(initialChapterName.c_str());
-		
-		if (!g_enableComments) {
-			return;
-		}
 		
 		QTimer::singleShot(0, []() {
 			ShowCommentDialog();
@@ -458,9 +467,14 @@ static void ShowCommentDialog()
 		commentInput,
 		g_pendingChapterName);
 
-	if (accepted && !commentInput.empty()) {
+	if (accepted) {
 		string finalChapterName = nameInput;
-		finalChapterName = nameInput + "@" + commentInput;
+		// 即使没有注释，也添加@后缀以匹配前面的标记
+		if (!commentInput.empty()) {
+			finalChapterName = nameInput + "@" + commentInput;
+		} else {
+			finalChapterName = nameInput + "@";
+		}
 		if (!g_pendingColorHex.isEmpty() && g_pendingColorHex != "none") {
 			QString colorName = getColorName(g_pendingColorHex);
 			finalChapterName = "(" + colorName.toStdString() + ") " + finalChapterName;
