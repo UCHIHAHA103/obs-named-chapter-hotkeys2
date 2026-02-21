@@ -102,7 +102,7 @@ public:
 					const QString &text, std::string &nameInput,
 					std::string &commentInput,
 					const QString &placeHolder = QString(""),
-					QString &colorInput = QString(""));
+					QString *colorInput = nullptr);
 	static bool IsDialogOpen() { return s_isDialogOpen; }
 
 protected:

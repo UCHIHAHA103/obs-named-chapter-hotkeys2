@@ -712,7 +712,7 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 						   const QString &text, std::string &nameInput,
 						   std::string &commentInput,
 						   const QString &placeHolder,
-						   QString &colorInput)
+						   QString *colorInput)
 {
 	ChapterWithCommentDialog dialog(parent);
 	dialog.setWindowTitle(title);
@@ -783,7 +783,9 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 	// 获取原始名称（从项数据），如果项数据为空则使用显示文本
 	QString selectedName = dialog.nameCombo->currentData().toString();
 	// 获取选中的颜色
-	colorInput = dialog.nameCombo->currentData(Qt::UserRole + 1).toString();
+	if (colorInput) {
+		*colorInput = dialog.nameCombo->currentData(Qt::UserRole + 1).toString();
+	}
 	
 	if (selectedName.isEmpty()) {
 		selectedName = dialog.nameCombo->currentText();
