@@ -510,8 +510,8 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	setWindowModality(Qt::WindowModality::WindowModal);
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint | Qt::WindowStaysOnTopHint);
 	setFixedWidth(400);
-	setMinimumHeight(180);
-	resize(400, 220);
+	setMinimumHeight(222);
+	resize(400, 280);
 
 	QVBoxLayout *layout = new QVBoxLayout;
 	setLayout(layout);
