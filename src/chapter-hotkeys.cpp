@@ -95,8 +95,8 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 {
 	ui->setupUi(this);
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
-	setMinimumWidth(393);
-	resize(393, 410);
+	setMinimumWidth(300);
+	resize(300, 410);
 	ui->listWidget->setSortingEnabled(true);
 
 	QVBoxLayout *mainLayout = qobject_cast<QVBoxLayout *>(layout());
@@ -512,8 +512,8 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	setWindowModality(Qt::WindowModality::WindowModal);
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint | Qt::WindowStaysOnTopHint);
 	setFixedWidth(280);
-	setMinimumHeight(210);
-	resize(280, 210);
+	setMinimumHeight(190);
+	resize(280, 190);
 
 	QVBoxLayout *layout = new QVBoxLayout;
 	setLayout(layout);
@@ -540,7 +540,7 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 
 	commentInput = new QTextEdit(this);
 	commentInput->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
-	commentInput->setMinimumHeight(80);
+	commentInput->setMinimumHeight(60);
 	commentInput->setMaximumHeight(600);
 	commentInput->installEventFilter(this);
 	layout->addWidget(commentInput, 1);
@@ -637,7 +637,7 @@ void ChapterWithCommentDialog::loadWindowState()
 	QJsonObject windowState = root["commentDialog"].toObject();
 	int x = windowState.value("x").toInt(INT_MIN);
 	int y = windowState.value("y").toInt(INT_MIN);
-	int height = windowState.value("height").toInt(180);
+	int height = windowState.value("height").toInt(190);
 	QString screenName = windowState.value("screenName").toString();
 
 	// 找到对应的屏幕
@@ -661,19 +661,19 @@ void ChapterWithCommentDialog::loadWindowState()
 		QRect screenGeometry = targetScreen->availableGeometry();
 		
 		// 设置最小高度和最大高度
-		int finalHeight = qBound(180, height, 600);
+		int finalHeight = qBound(190, height, 600);
 		
 		// 确保窗口在屏幕范围内
 		if (x == INT_MIN || y == INT_MIN) {
 			// 第一次打开，居中显示
-			move(screenGeometry.center() - QPoint(200, finalHeight / 2));
+			move(screenGeometry.center() - QPoint(140, finalHeight / 2));
 		} else {
 			// 恢复到之前的位置
 			move(x, y);
 		}
 		
 		// 设置高度
-		resize(400, finalHeight);
+		resize(280, finalHeight);
 	}
 }
 
