@@ -791,6 +791,8 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 	}
 	
 	dialog.commentInput->setFocus();
+	dialog.activateWindow();
+	dialog.raise();
 
 	// 居中对话框
 	dialog.adjustSize(); // 确保布局完成
