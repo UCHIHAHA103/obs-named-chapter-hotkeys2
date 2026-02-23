@@ -451,6 +451,11 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 	auto hk = static_cast<ChapterHotkeyItem *>(_this);
 
 	if (pressed) {
+		// 检查OBS是否正在录制，只有在录制时才启用标记功能
+		if (!obs_frontend_is_recording()) {
+			return;
+		}
+		
 		// 如果注释窗口已打开，不创建任何标记
 		if (ChapterWithCommentDialog::IsDialogOpen()) {
 			return;
