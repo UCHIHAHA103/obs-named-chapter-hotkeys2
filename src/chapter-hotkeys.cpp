@@ -452,7 +452,7 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 
 	if (pressed) {
 		// 检查OBS是否正在录制，只有在录制时才启用标记功能
-		if (!g_isRecording) {
+		if (!obs_frontend_recording_active()) {
 			return;
 		}
 		
