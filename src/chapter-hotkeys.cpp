@@ -310,8 +310,66 @@ void ChapterHotkeyUI::loadFromExternalConfig()
 	
 	QJsonArray markersArray = configObj["markers"].toArray();
 	
-	// 注意：这里不直接加载到UI，因为OBS配置是主配置源
-	// 外部配置主要用于PR插件读取，OBS配置是权威源
+	ui->listWidget->clear();
+	
+	for (int i = 0; i < markersArray.size(); i++) {
+		QJsonObject markerObj = markersArray[i].toObject();
+		QString name = markerObj["name"].toString();
+		QString uuid = markerObj["uuid"].toString();
+		QString color = markerObj["color"].toString();
+		QString hotkeyStr = markerObj["hotkey"].toString();
+		
+		if (name.isEmpty() || uuid.isEmpty()) continue;
+		
+		// 创建绑定数组
+		OBSDataArrayAutoRelease bindings = nullptr;
+		if (!hotkeyStr.isEmpty()) {
+			bindings = obs_data_array_create();
+			
+			OBSDataAutoRelease binding = obs_data_create();
+			
+			// 解析快捷键字符串
+			QStringList parts = hotkeyStr.split("+");
+			QString keyStr;
+			bool shift = false, control = false, alt = false, command = false;
+			
+			for (const QString &part : parts) {
+				QString p = part.trimmed().toUpper();
+				if (p == "CTRL" || p == "CONTROL") {
+					control = true;
+				} else if (p == "SHIFT") {
+					shift = true;
+				} else if (p == "ALT") {
+					alt = true;
+				} else if (p == "CMD" || p == "COMMAND") {
+					command = true;
+				} else {
+					// 键名
+					if (p.startsWith("NUM")) {
+						keyStr = "OBS_KEY_NUMPAD" + p.mid(3);
+					} else if (p.length() == 1) {
+						keyStr = "OBS_KEY_" + p;
+					} else {
+						keyStr = "OBS_KEY_" + p;
+					}
+				}
+			}
+			
+			obs_data_set_string(binding, "key", keyStr.toUtf8().constData());
+			obs_data_set_bool(binding, "shift", shift);
+			obs_data_set_bool(binding, "control", control);
+			obs_data_set_bool(binding, "alt", alt);
+			obs_data_set_bool(binding, "command", command);
+			
+			obs_data_array_push_back(bindings, binding);
+		}
+		
+		auto hkItem = new ChapterHotkeyItem(uuid, name.toUtf8().constData(), bindings, 
+			color.isEmpty() ? "#718637" : color);
+		ui->listWidget->addItem(hkItem);
+	}
+	
+	ui->listWidget->sortItems();
 }
 
 void ChapterHotkeyUI::LoadHotkeys(obs_data_t *data)
@@ -910,8 +968,12 @@ static void LoadSaveHotkeys(obs_data_t *save_data, bool saving, void *)
 	} else {
 		OBSDataAutoRelease obj =
 			obs_data_get_obj(save_data, "chapter_hotkeys");
-		if (obj)
+		if (obj) {
 			hk_edit->LoadHotkeys(obj);
+		} else {
+			// 如果OBS内部配置不存在，尝试从外部配置文件加载
+			hk_edit->loadFromExternalConfig();
+		}
 		g_enableComments = obs_data_get_bool(save_data, "enable_comments");
 		if (hk_edit->enableCommentsCheckBox) {
 			hk_edit->enableCommentsCheckBox->setChecked(g_enableComments);
