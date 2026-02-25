@@ -37,6 +37,7 @@ public:
 
 	void SaveHotkeys(obs_data_t *data);
 	void LoadHotkeys(obs_data_t *data);
+	void loadFromExternalConfig();
 	bool IsCommentsEnabled();
 
 	static QStringList GetAllChapterNames();
@@ -57,7 +58,6 @@ private slots:
 private:
 	void setSelectedItemColor(const QString &color);
 	void saveToExternalConfig();
-	void loadFromExternalConfig();
 	QString getExternalConfigPath();
 };
 
