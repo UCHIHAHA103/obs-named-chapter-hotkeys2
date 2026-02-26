@@ -647,11 +647,6 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 
 	layout->addLayout(nameRowLayout);
 
-	// 延迟设置焦点，确保对话框完全初始化
-	QTimer::singleShot(0, this, [this]() {
-		commentInput->setFocus();
-	});
-
 	commentLabel = new QLabel("注释:", this);
 	commentLabel->setFixedHeight(20);
 	commentLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
@@ -675,6 +670,11 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	
 	s_isDialogOpen = true;
 	loadWindowState();
+	
+	// 延迟设置焦点，确保对话框完全初始化并显示
+	QTimer::singleShot(100, this, [this]() {
+		commentInput->setFocus(Qt::PopupFocusReason);
+	});
 }
 
 ChapterWithCommentDialog::~ChapterWithCommentDialog()
