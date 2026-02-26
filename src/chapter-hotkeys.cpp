@@ -584,6 +584,14 @@ static void ShowCommentDialog()
 			finalChapterName = "(" + colorName.toStdString() + ") " + finalChapterName;
 		}
 		obs_frontend_recording_add_chapter(finalChapterName.c_str());
+	} else {
+		// 用户取消：创建标记 A2@###，表示这组标记需要被删除
+		string cancelChapterName = nameInput + "@###";
+		if (!selectedColor.isEmpty() && selectedColor != "none") {
+			QString colorName = getColorName(selectedColor);
+			cancelChapterName = "(" + colorName.toStdString() + ") " + cancelChapterName;
+		}
+		obs_frontend_recording_add_chapter(cancelChapterName.c_str());
 	}
 }
 
