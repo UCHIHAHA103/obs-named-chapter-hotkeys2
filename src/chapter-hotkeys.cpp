@@ -26,6 +26,10 @@
 #include <QTimer>
 #include <QTextEdit>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 using namespace std;
 
 bool ChapterWithCommentDialog::s_isDialogOpen = false;
@@ -672,8 +676,20 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	loadWindowState();
 	
 	// 延迟设置焦点，确保对话框完全初始化并显示
-	QTimer::singleShot(100, this, [this]() {
+	QTimer::singleShot(200, this, [this]() {
+#ifdef _WIN32
+		// 在全屏游戏时强制将窗口带到前台
+		HWND hwnd = reinterpret_cast<HWND>(winId());
+		if (hwnd) {
+			// 允许当前线程设置前台窗口
+			AllowSetForegroundWindow(ASFW_ANY);
+			// 强制将窗口带到前台
+			SetForegroundWindow(hwnd);
+			SetActiveWindow(hwnd);
+		}
+#endif
 		commentInput->setFocus(Qt::PopupFocusReason);
+		commentInput->activateWindow();
 	});
 }
 
