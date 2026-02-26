@@ -676,7 +676,7 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	loadWindowState();
 	
 	// 延迟设置焦点，确保对话框完全初始化并显示
-	QTimer::singleShot(200, this, [this]() {
+	QTimer::singleShot(300, this, [this]() {
 #ifdef _WIN32
 		// 在全屏游戏时强制将窗口带到前台
 		HWND hwnd = reinterpret_cast<HWND>(winId());
@@ -686,6 +686,21 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 			// 强制将窗口带到前台
 			SetForegroundWindow(hwnd);
 			SetActiveWindow(hwnd);
+			
+			// 获取注释输入框的窗口句柄并模拟鼠标点击
+			HWND commentHwnd = reinterpret_cast<HWND>(commentInput->winId());
+			if (commentHwnd) {
+				// 获取输入框的中心位置
+				RECT rect;
+				GetWindowRect(commentHwnd, &rect);
+				int x = (rect.left + rect.right) / 2;
+				int y = (rect.top + rect.bottom) / 2;
+				
+				// 模拟鼠标点击
+				mouse_event(MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE, x * 65535 / GetSystemMetrics(SM_CXSCREEN), y * 65535 / GetSystemMetrics(SM_CYSCREEN), 0, 0);
+				mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
+				mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+			}
 		}
 #endif
 		commentInput->setFocus(Qt::PopupFocusReason);
