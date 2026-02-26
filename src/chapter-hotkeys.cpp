@@ -676,7 +676,7 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	loadWindowState();
 	
 	// 延迟设置焦点，确保对话框完全初始化并显示
-	QTimer::singleShot(300, this, [this]() {
+	QTimer::singleShot(100, this, [this]() {
 #ifdef _WIN32
 		// 在全屏游戏时强制将窗口带到前台
 		HWND hwnd = reinterpret_cast<HWND>(winId());
