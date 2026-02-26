@@ -853,8 +853,11 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 		dialog.nameCombo->setCurrentIndex(index);
 	}
 	
-	dialog.commentInput->setFocus();
-	dialog.activateWindow();
+	// 使用 QTimer 确保在对话框显示后设置焦点
+	QTimer::singleShot(0, [&dialog]() {
+		dialog.commentInput->setFocus();
+		dialog.activateWindow();
+	});
 	dialog.raise();
 
 	// 居中对话框
