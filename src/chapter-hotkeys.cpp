@@ -1,5 +1,6 @@
 #include "chapter-hotkeys.hpp"
 
+#include <QCoreApplication>
 #include <QAction>
 #include <QKeyEvent>
 #include <QMainWindow>
@@ -202,17 +203,17 @@ void ChapterHotkeyUI::setSelectedItemColor(const QString &color)
 
 QString ChapterHotkeyUI::getExternalConfigPath()
 {
-	QString userProfile = qgetenv("USERPROFILE");
-	if (userProfile.isEmpty()) {
-		userProfile = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-		blog(LOG_WARNING, "USERPROFILE not found, using Documents: %s", qPrintable(userProfile));
+	// 使用CEP扩展目录下的VideoMarkerExtractor_Data
+	QString cepPath = "C:\\Program Files (x86)\\Common Files\\Adobe\\CEP\\extensions\\VideoMarkerExtractor\\VideoMarkerExtractor_Data";
+	QDir cepDataDir(cepPath);
+	
+	// 如果目录不存在则创建
+	if (!cepDataDir.exists()) {
+		bool created = cepDataDir.mkpath(".");
+		blog(LOG_INFO, "Creating CEP config directory: %s, success: %d", qPrintable(cepDataDir.path()), created);
 	}
-	QDir dataDir(userProfile + "/VideoMarkerExtractor_Data");
-	if (!dataDir.exists()) {
-		bool created = dataDir.mkpath(".");
-		blog(LOG_INFO, "Creating config directory: %s, success: %d", qPrintable(dataDir.path()), created);
-	}
-	QString configPath = dataDir.filePath("chapter-markers-config.json");
+	
+	QString configPath = cepDataDir.filePath("chapter-markers-config.json");
 	blog(LOG_INFO, "External config path: %s", qPrintable(configPath));
 	return configPath;
 }
