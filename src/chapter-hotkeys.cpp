@@ -251,7 +251,7 @@ void ChapterHotkeyUI::on_actionRemoveHotkey_triggered()
 {
 	auto item = ui->listWidget->currentItem();
 	if (item) {
-		plog(LOG_INFO, "User action: Remove hotkey '%s'", qPrintable(item->data(Name).toString()));
+		plog(LOG_INFO, "User action: Remove hotkey '%s'", qUtf8Printable(item->data(Name).toString()));
 	}
 	delete item;
 	ui->listWidget->sortItems();
@@ -306,11 +306,11 @@ QString ChapterHotkeyUI::getExternalConfigPath()
 	// 如果目录不存在则创建
 	if (!cepDataDir.exists()) {
 		bool created = cepDataDir.mkpath(".");
-		plog(LOG_INFO, "Creating CEP config directory: %s, success: %d", qPrintable(cepDataDir.path()), created);
+		plog(LOG_INFO, "Creating CEP config directory: %s, success: %d", qUtf8Printable(cepDataDir.path()), created);
 	}
 	
 	QString configPath = cepDataDir.filePath("chapter-markers-config.json");
-	plog(LOG_INFO, "External config path: %s", qPrintable(configPath));
+	plog(LOG_INFO, "External config path: %s", qUtf8Printable(configPath));
 	return configPath;
 }
 
@@ -397,9 +397,9 @@ void ChapterHotkeyUI::saveToExternalConfig()
 	if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
 		configFile.write(doc.toJson(QJsonDocument::Indented));
 		configFile.close();
-		plog(LOG_INFO, "External config saved successfully to: %s", qPrintable(configFile.fileName()));
+		plog(LOG_INFO, "External config saved successfully to: %s", qUtf8Printable(configFile.fileName()));
 	} else {
-		plog(LOG_ERROR, "Failed to open config file for writing: %s", qPrintable(configFile.fileName()));
+		plog(LOG_ERROR, "Failed to open config file for writing: %s", qUtf8Printable(configFile.fileName()));
 	}
 }
 
@@ -561,7 +561,7 @@ void ChapterHotkeyUI::saveCurrentAsProfile(const QString &profileName, const QSt
 		file.write(doc.toJson(QJsonDocument::Indented));
 		file.close();
 		currentProfileName = profileName;
-		plog(LOG_INFO, "Profile saved: %s", qPrintable(profileName));
+		plog(LOG_INFO, "Profile saved: %s", qUtf8Printable(profileName));
 	}
 }
 
@@ -570,7 +570,7 @@ void ChapterHotkeyUI::loadProfile(const QString &profileName)
 	QString filePath = getProfilesDir() + "/" + profileName + ".json";
 	QFile file(filePath);
 	if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-		plog(LOG_WARNING, "Cannot open profile: %s", qPrintable(profileName));
+		plog(LOG_WARNING, "Cannot open profile: %s", qUtf8Printable(profileName));
 		return;
 	}
 	
@@ -656,7 +656,7 @@ void ChapterHotkeyUI::loadProfile(const QString &profileName)
 	currentProfileName = profileName;
 	saveToExternalConfig();
 	
-	plog(LOG_INFO, "Profile loaded: %s with %d markers", qPrintable(profileName), ui->listWidget->count());
+	plog(LOG_INFO, "Profile loaded: %s with %d markers", qUtf8Printable(profileName), ui->listWidget->count());
 }
 
 void ChapterHotkeyUI::deleteProfile(const QString &profileName)
@@ -666,7 +666,7 @@ void ChapterHotkeyUI::deleteProfile(const QString &profileName)
 	if (currentProfileName == profileName) {
 		currentProfileName.clear();
 	}
-	plog(LOG_INFO, "Profile deleted: %s", qPrintable(profileName));
+	plog(LOG_INFO, "Profile deleted: %s", qUtf8Printable(profileName));
 }
 
 QStringList ChapterHotkeyUI::getProfileNames()
@@ -712,7 +712,7 @@ void ChapterHotkeyUI::autoSaveCurrentProfile()
 	saveCurrentAsProfile(currentProfileName);
 	saveToExternalConfig();
 	plog(LOG_INFO, "Auto-saved to profile: %s (%d markers)",
-		qPrintable(currentProfileName), ui->listWidget->count());
+		qUtf8Printable(currentProfileName), ui->listWidget->count());
 }
 
 void ChapterHotkeyUI::onProfileComboChanged(int index)
@@ -757,7 +757,7 @@ void ChapterHotkeyUI::onSaveProfileClicked()
 	saveCurrentAsProfile(name);
 	refreshProfileCombo();
 	
-	plog(LOG_INFO, "New empty profile created: %s", qPrintable(name));
+	plog(LOG_INFO, "New empty profile created: %s", qUtf8Printable(name));
 }
 
 void ChapterHotkeyUI::onDeleteProfileClicked()
@@ -838,7 +838,7 @@ void ChapterHotkeyUI::exportConfig(const QString &filePath)
 	if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
 		file.write(doc.toJson(QJsonDocument::Indented));
 		file.close();
-		plog(LOG_INFO, "Config exported to: %s", qPrintable(filePath));
+		plog(LOG_INFO, "Config exported to: %s", qUtf8Printable(filePath));
 	}
 }
 
@@ -1201,7 +1201,7 @@ static void ShowCommentDialog()
 		return;
 	}
 	
-	plog(LOG_INFO, "ShowCommentDialog: opening for marker '%s'", qPrintable(g_pendingChapterName));
+	plog(LOG_INFO, "ShowCommentDialog: opening for marker '%s'", qUtf8Printable(g_pendingChapterName));
 	string nameInput = g_pendingChapterName.toStdString();
 	string commentInput;
 	QString selectedColor = g_pendingColorHex; // 默认使用触发时的颜色
@@ -1835,7 +1835,7 @@ void MarkerLivePanel::addMarker(const QString &name, const QString &color, const
 	markerList->scrollToBottom();
 	
 	plog(LOG_INFO, "Live panel: marker #%d added - %s at %s",
-		entry.index, qPrintable(name), qPrintable(entry.timeCode));
+		entry.index, qUtf8Printable(name), qUtf8Printable(entry.timeCode));
 }
 
 void MarkerLivePanel::clearMarkers()
