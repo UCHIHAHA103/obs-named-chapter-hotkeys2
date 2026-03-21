@@ -24,6 +24,7 @@
 #include <QPixmap>
 #include <QPainter>
 #include <QMap>
+#include <QSet>
 #include <QMessageBox>
 #include <QTimer>
 #include <QTextEdit>
@@ -511,12 +512,31 @@ void ChapterHotkeyUI::saveCurrentAsProfile(const QString &profileName, const QSt
 		markerObj["uuid"] = item->data(HotkeyId).toString();
 		markerObj["color"] = item->data(Color).toString();
 		
-		// 保存快捷键信息
+		// 保存完整的 OBS 热键绑定数据（JSON 数组），确保切换方案后快捷键能正确恢复
 		OBSDataArrayAutoRelease bindings =
 			static_cast<obs_data_array_t *>(
 				item->data(Bindings).value<void *>());
 		if (bindings) {
 			size_t count = obs_data_array_count(bindings);
+			QJsonArray bindingsJsonArray;
+			for (size_t j = 0; j < count; j++) {
+				obs_data_t *binding = obs_data_array_item(bindings, j);
+				if (binding) {
+					const char *jsonStr = obs_data_get_json(binding);
+					if (jsonStr) {
+						QJsonDocument bindingDoc = QJsonDocument::fromJson(jsonStr);
+						if (bindingDoc.isObject()) {
+							bindingsJsonArray.append(bindingDoc.object());
+						}
+					}
+					obs_data_release(binding);
+				}
+			}
+			if (!bindingsJsonArray.isEmpty()) {
+				markerObj["bindings"] = bindingsJsonArray;
+			}
+			
+			// 同时保存可读的快捷键字符串（用于外部配置和调试）
 			if (count > 0) {
 				obs_data_t *binding = obs_data_array_item(bindings, 0);
 				if (binding) {
@@ -549,7 +569,7 @@ void ChapterHotkeyUI::saveCurrentAsProfile(const QString &profileName, const QSt
 	QJsonObject profileObj;
 	profileObj["name"] = profileName;
 	profileObj["description"] = description;
-	profileObj["version"] = "2.0";
+	profileObj["version"] = "3.0";
 	profileObj["enableComments"] = g_enableComments;
 	profileObj["createdAt"] = QDateTime::currentDateTime().toString(Qt::ISODate);
 	profileObj["markers"] = markersArray;
@@ -587,7 +607,7 @@ void ChapterHotkeyUI::loadProfile(const QString &profileName)
 	ui->listWidget->blockSignals(true);
 	
 	// 清空当前列表
-	// 注意：需要先注销所有热键
+	// 注意：delete ChapterHotkeyItem 会 obs_hotkey_unregister 注销旧热键
 	while (ui->listWidget->count() > 0) {
 		delete ui->listWidget->takeItem(0);
 	}
@@ -598,7 +618,6 @@ void ChapterHotkeyUI::loadProfile(const QString &profileName)
 		QString name = markerObj["name"].toString();
 		QString uuid = markerObj["uuid"].toString();
 		QString color = markerObj["color"].toString();
-		QString hotkeyStr = markerObj["hotkey"].toString();
 		
 		if (name.isEmpty()) continue;
 		if (uuid.isEmpty()) {
@@ -606,34 +625,60 @@ void ChapterHotkeyUI::loadProfile(const QString &profileName)
 		}
 		
 		OBSDataArrayAutoRelease bindings = nullptr;
-		if (!hotkeyStr.isEmpty()) {
-			bindings = obs_data_array_create();
-			OBSDataAutoRelease binding = obs_data_create();
-			
-			QStringList parts = hotkeyStr.split("+");
-			QString keyStr;
-			bool shift = false, control = false, alt = false, command = false;
-			
-			for (const QString &part : parts) {
-				QString p = part.trimmed().toUpper();
-				if (p == "CTRL" || p == "CONTROL") control = true;
-				else if (p == "SHIFT") shift = true;
-				else if (p == "ALT") alt = true;
-				else if (p == "CMD" || p == "COMMAND") command = true;
-				else {
-					if (p.startsWith("NUM"))
-						keyStr = "OBS_KEY_NUMPAD" + p.mid(3);
-					else
-						keyStr = "OBS_KEY_" + p;
+		
+		// 优先从完整的 bindings JSON 数组恢复（v3.0 格式）
+		if (markerObj.contains("bindings") && markerObj["bindings"].isArray()) {
+			QJsonArray bindingsJsonArray = markerObj["bindings"].toArray();
+			if (!bindingsJsonArray.isEmpty()) {
+				bindings = obs_data_array_create();
+				for (int j = 0; j < bindingsJsonArray.size(); j++) {
+					QJsonObject bindObj = bindingsJsonArray[j].toObject();
+					QJsonDocument bindDoc(bindObj);
+					QByteArray bindJson = bindDoc.toJson(QJsonDocument::Compact);
+					OBSDataAutoRelease binding = obs_data_create_from_json(bindJson.constData());
+					if (binding) {
+						obs_data_array_push_back(bindings, binding);
+					}
 				}
+				plog(LOG_INFO, "Marker '%s': restored %d bindings from profile data",
+					qUtf8Printable(name), (int)obs_data_array_count(bindings));
 			}
-			
-			obs_data_set_string(binding, "key", keyStr.toUtf8().constData());
-			obs_data_set_bool(binding, "shift", shift);
-			obs_data_set_bool(binding, "control", control);
-			obs_data_set_bool(binding, "alt", alt);
-			obs_data_set_bool(binding, "command", command);
-			obs_data_array_push_back(bindings, binding);
+		}
+		
+		// 回退：从旧版 hotkey 字符串解析（v2.0 兼容）
+		if (!bindings || obs_data_array_count(bindings) == 0) {
+			QString hotkeyStr = markerObj["hotkey"].toString();
+			if (!hotkeyStr.isEmpty() && hotkeyStr != "NONE") {
+				bindings = obs_data_array_create();
+				OBSDataAutoRelease binding = obs_data_create();
+				
+				QStringList parts = hotkeyStr.split("+");
+				QString keyStr;
+				bool shift = false, control = false, alt = false, command = false;
+				
+				for (const QString &part : parts) {
+					QString p = part.trimmed().toUpper();
+					if (p == "CTRL" || p == "CONTROL") control = true;
+					else if (p == "SHIFT") shift = true;
+					else if (p == "ALT") alt = true;
+					else if (p == "CMD" || p == "COMMAND") command = true;
+					else {
+						if (p.startsWith("NUM"))
+							keyStr = "OBS_KEY_NUMPAD" + p.mid(3);
+						else
+							keyStr = "OBS_KEY_" + p;
+					}
+				}
+				
+				obs_data_set_string(binding, "key", keyStr.toUtf8().constData());
+				obs_data_set_bool(binding, "shift", shift);
+				obs_data_set_bool(binding, "control", control);
+				obs_data_set_bool(binding, "alt", alt);
+				obs_data_set_bool(binding, "command", command);
+				obs_data_array_push_back(bindings, binding);
+				plog(LOG_INFO, "Marker '%s': parsed hotkey string '%s' (legacy format)",
+					qUtf8Printable(name), qUtf8Printable(hotkeyStr));
+			}
 		}
 		
 		auto hkItem = new ChapterHotkeyItem(uuid, name.toUtf8().constData(), bindings,
@@ -796,6 +841,27 @@ void ChapterHotkeyUI::exportConfig(const QString &filePath)
 				item->data(Bindings).value<void *>());
 		if (bindings) {
 			size_t count = obs_data_array_count(bindings);
+			
+			// 保存完整的 OBS 热键绑定数据
+			QJsonArray bindingsJsonArray;
+			for (size_t j = 0; j < count; j++) {
+				obs_data_t *binding = obs_data_array_item(bindings, j);
+				if (binding) {
+					const char *jsonStr = obs_data_get_json(binding);
+					if (jsonStr) {
+						QJsonDocument bindingDoc = QJsonDocument::fromJson(jsonStr);
+						if (bindingDoc.isObject()) {
+							bindingsJsonArray.append(bindingDoc.object());
+						}
+					}
+					obs_data_release(binding);
+				}
+			}
+			if (!bindingsJsonArray.isEmpty()) {
+				markerObj["bindings"] = bindingsJsonArray;
+			}
+			
+			// 同时保存可读的快捷键字符串
 			if (count > 0) {
 				obs_data_t *binding = obs_data_array_item(bindings, 0);
 				if (binding) {
@@ -826,7 +892,7 @@ void ChapterHotkeyUI::exportConfig(const QString &filePath)
 	}
 	
 	QJsonObject exportObj;
-	exportObj["version"] = "2.0";
+	exportObj["version"] = "3.0";
 	exportObj["pluginName"] = "obs-named-chapter-hotkeys";
 	exportObj["exportedAt"] = QDateTime::currentDateTime().toString(Qt::ISODate);
 	exportObj["profile"] = currentProfileName;
@@ -878,6 +944,17 @@ void ChapterHotkeyUI::importConfig(const QString &filePath)
 	
 	bool replace = (ret == QMessageBox::Yes);
 	
+	// 屏蔽信号，避免导入过程中触发不必要的自动保存
+	ui->listWidget->blockSignals(true);
+	
+	// 收集现有 UUID（合并模式下用于去重）
+	QSet<QString> existingUUIDs;
+	if (!replace) {
+		for (int i = 0; i < ui->listWidget->count(); i++) {
+			existingUUIDs.insert(ui->listWidget->item(i)->data(HotkeyId).toString());
+		}
+	}
+	
 	if (replace) {
 		while (ui->listWidget->count() > 0) {
 			delete ui->listWidget->takeItem(0);
@@ -890,42 +967,64 @@ void ChapterHotkeyUI::importConfig(const QString &filePath)
 		QString name = markerObj["name"].toString();
 		QString uuid = markerObj["uuid"].toString();
 		QString color = markerObj["color"].toString();
-		QString hotkeyStr = markerObj["hotkey"].toString();
 		
 		if (name.isEmpty()) continue;
-		if (uuid.isEmpty()) {
+		// 合并模式下，如果 UUID 已存在则重新生成，避免热键 ID 冲突
+		if (uuid.isEmpty() || (!replace && existingUUIDs.contains(uuid))) {
 			uuid = "chapter_hotkey_" + QUuid::createUuid().toString(QUuid::WithoutBraces);
 		}
 		
 		OBSDataArrayAutoRelease bindings = nullptr;
-		if (!hotkeyStr.isEmpty()) {
-			bindings = obs_data_array_create();
-			OBSDataAutoRelease binding = obs_data_create();
-			
-			QStringList parts = hotkeyStr.split("+");
-			QString keyStr;
-			bool shift = false, control = false, alt = false, command = false;
-			
-			for (const QString &part : parts) {
-				QString p = part.trimmed().toUpper();
-				if (p == "CTRL" || p == "CONTROL") control = true;
-				else if (p == "SHIFT") shift = true;
-				else if (p == "ALT") alt = true;
-				else if (p == "CMD" || p == "COMMAND") command = true;
-				else {
-					if (p.startsWith("NUM"))
-						keyStr = "OBS_KEY_NUMPAD" + p.mid(3);
-					else
-						keyStr = "OBS_KEY_" + p;
+		
+		// 优先从完整的 bindings JSON 数组恢复（v3.0 格式）
+		if (markerObj.contains("bindings") && markerObj["bindings"].isArray()) {
+			QJsonArray bindingsJsonArray = markerObj["bindings"].toArray();
+			if (!bindingsJsonArray.isEmpty()) {
+				bindings = obs_data_array_create();
+				for (int j = 0; j < bindingsJsonArray.size(); j++) {
+					QJsonObject bindObj = bindingsJsonArray[j].toObject();
+					QJsonDocument bindDoc(bindObj);
+					QByteArray bindJson = bindDoc.toJson(QJsonDocument::Compact);
+					OBSDataAutoRelease binding = obs_data_create_from_json(bindJson.constData());
+					if (binding) {
+						obs_data_array_push_back(bindings, binding);
+					}
 				}
 			}
-			
-			obs_data_set_string(binding, "key", keyStr.toUtf8().constData());
-			obs_data_set_bool(binding, "shift", shift);
-			obs_data_set_bool(binding, "control", control);
-			obs_data_set_bool(binding, "alt", alt);
-			obs_data_set_bool(binding, "command", command);
-			obs_data_array_push_back(bindings, binding);
+		}
+		
+		// 回退：从旧版 hotkey 字符串解析（v2.0 兼容）
+		if (!bindings || obs_data_array_count(bindings) == 0) {
+			QString hotkeyStr = markerObj["hotkey"].toString();
+			if (!hotkeyStr.isEmpty() && hotkeyStr != "NONE") {
+				bindings = obs_data_array_create();
+				OBSDataAutoRelease binding = obs_data_create();
+				
+				QStringList parts = hotkeyStr.split("+");
+				QString keyStr;
+				bool shift = false, control = false, alt = false, command = false;
+				
+				for (const QString &part : parts) {
+					QString p = part.trimmed().toUpper();
+					if (p == "CTRL" || p == "CONTROL") control = true;
+					else if (p == "SHIFT") shift = true;
+					else if (p == "ALT") alt = true;
+					else if (p == "CMD" || p == "COMMAND") command = true;
+					else {
+						if (p.startsWith("NUM"))
+							keyStr = "OBS_KEY_NUMPAD" + p.mid(3);
+						else
+							keyStr = "OBS_KEY_" + p;
+					}
+				}
+				
+				obs_data_set_string(binding, "key", keyStr.toUtf8().constData());
+				obs_data_set_bool(binding, "shift", shift);
+				obs_data_set_bool(binding, "control", control);
+				obs_data_set_bool(binding, "alt", alt);
+				obs_data_set_bool(binding, "command", command);
+				obs_data_array_push_back(bindings, binding);
+			}
 		}
 		
 		auto hkItem = new ChapterHotkeyItem(uuid, name.toUtf8().constData(), bindings,
@@ -946,6 +1045,10 @@ void ChapterHotkeyUI::importConfig(const QString &filePath)
 	}
 	
 	ui->listWidget->sortItems();
+	
+	// 恢复信号
+	ui->listWidget->blockSignals(false);
+	
 	saveToExternalConfig();
 	refreshProfileCombo();
 	
@@ -1030,6 +1133,12 @@ void ChapterHotkeyUI::SaveHotkeys(obs_data_t *data)
 	
 	// 同时保存到外部配置文件供PR插件读取
 	saveToExternalConfig();
+	
+	// 同时保存到当前方案文件（确保 OBS 设置中修改的快捷键绑定也保存到方案）
+	if (!currentProfileName.isEmpty()) {
+		saveCurrentAsProfile(currentProfileName);
+		plog(LOG_INFO, "Profile also saved during OBS save: %s", qUtf8Printable(currentProfileName));
+	}
 }
 
 // ============================================================================
