@@ -26,6 +26,14 @@
 #include <QMessageBox>
 #include <QTimer>
 #include <QTextEdit>
+#include <QFileDialog>
+#include <QInputDialog>
+#include <QClipboard>
+#include <QApplication>
+#include <QDateTime>
+#include <QGroupBox>
+#include <QMutexLocker>
+#include <QScrollBar>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -33,7 +41,11 @@
 
 using namespace std;
 
-bool ChapterWithCommentDialog::s_isDialogOpen = false;
+// ============================================================================
+// 静态变量
+// ============================================================================
+std::atomic<bool> ChapterWithCommentDialog::s_isDialogOpen(false);
+QMutex ChapterWithCommentDialog::s_dialogMutex;
 
 static QMap<QString, QString> createColorMap()
 {
@@ -92,26 +104,83 @@ static QColor getColorFromHex(const QString &colorNameOrHex)
 }
 
 ChapterHotkeyUI *hk_edit;
+MarkerLivePanel *g_livePanel = nullptr;
 bool g_enableComments = false;
 
+// 对话框重入保护：使用原子标志防止热键线程并发触发
+static std::atomic<bool> g_showDialogPending(false);
+
+// ============================================================================
+// ChapterHotkeyUI 构造函数 - 增加配置方案UI和导入导出按钮
+// ============================================================================
 ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 	: QDialog(parent),
 	  ui(new Ui_HotkeyChaptersDialog)
 {
 	ui->setupUi(this);
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
-	setMinimumWidth(300);
-	resize(300, 410);
+	setMinimumWidth(340);
+	resize(340, 520);
 	ui->listWidget->setSortingEnabled(true);
 
 	QVBoxLayout *mainLayout = qobject_cast<QVBoxLayout *>(layout());
 	if (mainLayout) {
+		// === 配置方案区域 ===
+		QGroupBox *profileGroup = new QGroupBox("配置方案", this);
+		QHBoxLayout *profileLayout = new QHBoxLayout;
+		profileLayout->setSpacing(4);
+		profileLayout->setContentsMargins(4, 2, 4, 2);
+		
+		profileCombo = new QComboBox(this);
+		profileCombo->setMinimumWidth(120);
+		profileCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		profileLayout->addWidget(profileCombo);
+		
+		saveProfileBtn = new QPushButton("💾", this);
+		saveProfileBtn->setToolTip("保存当前配置为方案");
+		saveProfileBtn->setFixedSize(28, 28);
+		profileLayout->addWidget(saveProfileBtn);
+		
+		deleteProfileBtn = new QPushButton("🗑", this);
+		deleteProfileBtn->setToolTip("删除选中方案");
+		deleteProfileBtn->setFixedSize(28, 28);
+		profileLayout->addWidget(deleteProfileBtn);
+		
+		profileGroup->setLayout(profileLayout);
+		mainLayout->insertWidget(0, profileGroup);
+		
+		// === 启用注释复选框 ===
 		enableCommentsCheckBox = new QCheckBox("启用标记注释", this);
 		enableCommentsCheckBox->setChecked(false);
 		connect(enableCommentsCheckBox, &QCheckBox::toggled, [](bool checked) {
 			g_enableComments = checked;
 		});
-		mainLayout->insertWidget(0, enableCommentsCheckBox);
+		mainLayout->insertWidget(1, enableCommentsCheckBox);
+		
+		// === 导入/导出按钮 ===
+		QHBoxLayout *ioLayout = new QHBoxLayout;
+		ioLayout->setSpacing(4);
+		
+		exportBtn = new QPushButton("📤 导出配置", this);
+		exportBtn->setToolTip("导出标记配置到文件");
+		ioLayout->addWidget(exportBtn);
+		
+		importBtn = new QPushButton("📥 导入配置", this);
+		importBtn->setToolTip("从文件导入标记配置");
+		ioLayout->addWidget(importBtn);
+		
+		mainLayout->addLayout(ioLayout);
+		
+		// === 连接信号 ===
+		connect(profileCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+			this, &ChapterHotkeyUI::onProfileComboChanged);
+		connect(saveProfileBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onSaveProfileClicked);
+		connect(deleteProfileBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onDeleteProfileClicked);
+		connect(exportBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onExportClicked);
+		connect(importBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onImportClicked);
+		
+		// 初始化方案下拉框
+		refreshProfileCombo();
 	}
 }
 
@@ -144,6 +213,9 @@ QStringList ChapterHotkeyUI::GetAllChapterNames()
 	return names;
 }
 
+// ============================================================================
+// 标记快捷键操作
+// ============================================================================
 void ChapterHotkeyUI::on_actionAddHotkey_triggered()
 {
 	string name;
@@ -201,6 +273,9 @@ void ChapterHotkeyUI::setSelectedItemColor(const QString &color)
 	}
 }
 
+// ============================================================================
+// 外部配置文件路径
+// ============================================================================
 QString ChapterHotkeyUI::getExternalConfigPath()
 {
 	// 使用CEP扩展目录下的VideoMarkerExtractor_Data
@@ -218,6 +293,22 @@ QString ChapterHotkeyUI::getExternalConfigPath()
 	return configPath;
 }
 
+// ============================================================================
+// 配置方案目录
+// ============================================================================
+QString ChapterHotkeyUI::getProfilesDir()
+{
+	QString cepPath = "C:\\Program Files (x86)\\Common Files\\Adobe\\CEP\\extensions\\VideoMarkerExtractor\\VideoMarkerExtractor_Data\\profiles";
+	QDir dir(cepPath);
+	if (!dir.exists()) {
+		dir.mkpath(".");
+	}
+	return cepPath;
+}
+
+// ============================================================================
+// 保存到外部配置文件
+// ============================================================================
 void ChapterHotkeyUI::saveToExternalConfig()
 {
 	QJsonArray markersArray;
@@ -275,7 +366,9 @@ void ChapterHotkeyUI::saveToExternalConfig()
 	}
 	
 	QJsonObject configObj;
-	configObj["version"] = "1.0";
+	configObj["version"] = "2.0";
+	configObj["profile"] = currentProfileName;
+	configObj["enableComments"] = g_enableComments;
 	configObj["markers"] = markersArray;
 	
 	QJsonDocument doc(configObj);
@@ -309,8 +402,14 @@ void ChapterHotkeyUI::loadFromExternalConfig()
 	}
 	
 	QJsonObject configObj = doc.object();
-	if (configObj["version"].toString() != "1.0") {
+	QString version = configObj["version"].toString();
+	if (version != "1.0" && version != "2.0") {
 		return;
+	}
+	
+	// 读取方案名
+	if (configObj.contains("profile")) {
+		currentProfileName = configObj["profile"].toString();
 	}
 	
 	QJsonArray markersArray = configObj["markers"].toArray();
@@ -375,8 +474,480 @@ void ChapterHotkeyUI::loadFromExternalConfig()
 	}
 	
 	ui->listWidget->sortItems();
+	refreshProfileCombo();
 }
 
+// ============================================================================
+// 配置方案管理
+// ============================================================================
+void ChapterHotkeyUI::saveCurrentAsProfile(const QString &profileName, const QString &description)
+{
+	QJsonArray markersArray;
+	for (int i = 0; i < ui->listWidget->count(); i++) {
+		auto item = ui->listWidget->item(i);
+		QJsonObject markerObj;
+		markerObj["name"] = item->data(Name).toString();
+		markerObj["uuid"] = item->data(HotkeyId).toString();
+		markerObj["color"] = item->data(Color).toString();
+		
+		// 保存快捷键信息
+		OBSDataArrayAutoRelease bindings =
+			static_cast<obs_data_array_t *>(
+				item->data(Bindings).value<void *>());
+		if (bindings) {
+			size_t count = obs_data_array_count(bindings);
+			if (count > 0) {
+				obs_data_t *binding = obs_data_array_item(bindings, 0);
+				if (binding) {
+					const char *key = obs_data_get_string(binding, "key");
+					bool shift = obs_data_get_bool(binding, "shift");
+					bool control = obs_data_get_bool(binding, "control");
+					bool alt = obs_data_get_bool(binding, "alt");
+					bool command = obs_data_get_bool(binding, "command");
+					
+					QStringList parts;
+					if (control) parts << "Ctrl";
+					if (shift) parts << "Shift";
+					if (alt) parts << "Alt";
+					if (command) parts << "Cmd";
+					if (key && *key) {
+						QString keyStr = QString(key).toUpper();
+						if (keyStr.startsWith("OBS_KEY_"))
+							keyStr = keyStr.mid(8);
+						parts << keyStr;
+					}
+					markerObj["hotkey"] = parts.join("+");
+					obs_data_release(binding);
+				}
+			}
+		}
+		
+		markersArray.append(markerObj);
+	}
+	
+	QJsonObject profileObj;
+	profileObj["name"] = profileName;
+	profileObj["description"] = description;
+	profileObj["version"] = "2.0";
+	profileObj["enableComments"] = g_enableComments;
+	profileObj["createdAt"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+	profileObj["markers"] = markersArray;
+	
+	QJsonDocument doc(profileObj);
+	QString filePath = getProfilesDir() + "/" + profileName + ".json";
+	QFile file(filePath);
+	if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+		file.write(doc.toJson(QJsonDocument::Indented));
+		file.close();
+		currentProfileName = profileName;
+		blog(LOG_INFO, "Profile saved: %s", qPrintable(profileName));
+	}
+}
+
+void ChapterHotkeyUI::loadProfile(const QString &profileName)
+{
+	QString filePath = getProfilesDir() + "/" + profileName + ".json";
+	QFile file(filePath);
+	if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+		blog(LOG_WARNING, "Cannot open profile: %s", qPrintable(profileName));
+		return;
+	}
+	
+	QByteArray data = file.readAll();
+	file.close();
+	
+	QJsonDocument doc = QJsonDocument::fromJson(data);
+	if (!doc.isObject()) return;
+	
+	QJsonObject profileObj = doc.object();
+	QJsonArray markersArray = profileObj["markers"].toArray();
+	
+	// 清空当前列表
+	// 注意：需要先注销所有热键
+	while (ui->listWidget->count() > 0) {
+		delete ui->listWidget->takeItem(0);
+	}
+	
+	// 加载标记
+	for (int i = 0; i < markersArray.size(); i++) {
+		QJsonObject markerObj = markersArray[i].toObject();
+		QString name = markerObj["name"].toString();
+		QString uuid = markerObj["uuid"].toString();
+		QString color = markerObj["color"].toString();
+		QString hotkeyStr = markerObj["hotkey"].toString();
+		
+		if (name.isEmpty()) continue;
+		if (uuid.isEmpty()) {
+			uuid = "chapter_hotkey_" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+		}
+		
+		OBSDataArrayAutoRelease bindings = nullptr;
+		if (!hotkeyStr.isEmpty()) {
+			bindings = obs_data_array_create();
+			OBSDataAutoRelease binding = obs_data_create();
+			
+			QStringList parts = hotkeyStr.split("+");
+			QString keyStr;
+			bool shift = false, control = false, alt = false, command = false;
+			
+			for (const QString &part : parts) {
+				QString p = part.trimmed().toUpper();
+				if (p == "CTRL" || p == "CONTROL") control = true;
+				else if (p == "SHIFT") shift = true;
+				else if (p == "ALT") alt = true;
+				else if (p == "CMD" || p == "COMMAND") command = true;
+				else {
+					if (p.startsWith("NUM"))
+						keyStr = "OBS_KEY_NUMPAD" + p.mid(3);
+					else
+						keyStr = "OBS_KEY_" + p;
+				}
+			}
+			
+			obs_data_set_string(binding, "key", keyStr.toUtf8().constData());
+			obs_data_set_bool(binding, "shift", shift);
+			obs_data_set_bool(binding, "control", control);
+			obs_data_set_bool(binding, "alt", alt);
+			obs_data_set_bool(binding, "command", command);
+			obs_data_array_push_back(bindings, binding);
+		}
+		
+		auto hkItem = new ChapterHotkeyItem(uuid, name.toUtf8().constData(), bindings,
+			color.isEmpty() ? "#718637" : color);
+		ui->listWidget->addItem(hkItem);
+	}
+	
+	// 恢复注释开关
+	if (profileObj.contains("enableComments")) {
+		g_enableComments = profileObj["enableComments"].toBool();
+		if (enableCommentsCheckBox)
+			enableCommentsCheckBox->setChecked(g_enableComments);
+	}
+	
+	ui->listWidget->sortItems();
+	currentProfileName = profileName;
+	saveToExternalConfig();
+	
+	blog(LOG_INFO, "Profile loaded: %s", qPrintable(profileName));
+}
+
+void ChapterHotkeyUI::deleteProfile(const QString &profileName)
+{
+	QString filePath = getProfilesDir() + "/" + profileName + ".json";
+	QFile::remove(filePath);
+	if (currentProfileName == profileName) {
+		currentProfileName.clear();
+	}
+	blog(LOG_INFO, "Profile deleted: %s", qPrintable(profileName));
+}
+
+QStringList ChapterHotkeyUI::getProfileNames()
+{
+	QDir dir(getProfilesDir());
+	QStringList filters;
+	filters << "*.json";
+	QStringList files = dir.entryList(filters, QDir::Files, QDir::Name);
+	QStringList names;
+	for (const QString &f : files) {
+		names.append(f.left(f.length() - 5)); // 去掉 .json
+	}
+	return names;
+}
+
+void ChapterHotkeyUI::refreshProfileCombo()
+{
+	if (!profileCombo) return;
+	
+	profileCombo->blockSignals(true);
+	profileCombo->clear();
+	profileCombo->addItem("-- 选择方案 --");
+	
+	QStringList profiles = getProfileNames();
+	for (const QString &p : profiles) {
+		profileCombo->addItem(p);
+	}
+	
+	// 选中当前方案
+	if (!currentProfileName.isEmpty()) {
+		int idx = profileCombo->findText(currentProfileName);
+		if (idx >= 0) profileCombo->setCurrentIndex(idx);
+	}
+	
+	profileCombo->blockSignals(false);
+}
+
+void ChapterHotkeyUI::onProfileComboChanged(int index)
+{
+	if (index <= 0) return; // "-- 选择方案 --"
+	
+	QString profileName = profileCombo->currentText();
+	if (profileName.isEmpty() || profileName == "-- 选择方案 --") return;
+	
+	// 提示用户确认切换
+	auto ret = QMessageBox::question(this, "切换方案",
+		QString("确定要切换到方案「%1」吗？\n当前未保存的更改将丢失。").arg(profileName),
+		QMessageBox::Yes | QMessageBox::No);
+	
+	if (ret == QMessageBox::Yes) {
+		loadProfile(profileName);
+	} else {
+		// 恢复选择
+		refreshProfileCombo();
+	}
+}
+
+void ChapterHotkeyUI::onSaveProfileClicked()
+{
+	bool ok;
+	QString defaultName = currentProfileName.isEmpty() ? "我的方案" : currentProfileName;
+	QString name = QInputDialog::getText(this, "保存方案",
+		"请输入方案名称：\n\n预设方案示例：\n• 竞品分析方案\n• Bug 测试方案\n• 关卡设计方案\n• 教程录制方案",
+		QLineEdit::Normal, defaultName, &ok);
+	
+	if (!ok || name.trimmed().isEmpty()) return;
+	name = name.trimmed();
+	
+	// 检查是否已存在
+	QStringList existing = getProfileNames();
+	if (existing.contains(name)) {
+		auto ret = QMessageBox::question(this, "覆盖方案",
+			QString("方案「%1」已存在，是否覆盖？").arg(name),
+			QMessageBox::Yes | QMessageBox::No);
+		if (ret != QMessageBox::Yes) return;
+	}
+	
+	saveCurrentAsProfile(name);
+	refreshProfileCombo();
+	
+	QMessageBox::information(this, "保存成功",
+		QString("方案「%1」已保存，包含 %2 个标记。").arg(name).arg(ui->listWidget->count()));
+}
+
+void ChapterHotkeyUI::onDeleteProfileClicked()
+{
+	if (profileCombo->currentIndex() <= 0) {
+		QMessageBox::warning(this, "提示", "请先选择要删除的方案。");
+		return;
+	}
+	
+	QString name = profileCombo->currentText();
+	auto ret = QMessageBox::question(this, "删除方案",
+		QString("确定要删除方案「%1」吗？此操作不可撤销。").arg(name),
+		QMessageBox::Yes | QMessageBox::No);
+	
+	if (ret == QMessageBox::Yes) {
+		deleteProfile(name);
+		refreshProfileCombo();
+	}
+}
+
+// ============================================================================
+// 导入/导出功能
+// ============================================================================
+void ChapterHotkeyUI::exportConfig(const QString &filePath)
+{
+	QJsonArray markersArray;
+	for (int i = 0; i < ui->listWidget->count(); i++) {
+		auto item = ui->listWidget->item(i);
+		QJsonObject markerObj;
+		markerObj["name"] = item->data(Name).toString();
+		markerObj["uuid"] = item->data(HotkeyId).toString();
+		markerObj["color"] = item->data(Color).toString();
+		
+		OBSDataArrayAutoRelease bindings =
+			static_cast<obs_data_array_t *>(
+				item->data(Bindings).value<void *>());
+		if (bindings) {
+			size_t count = obs_data_array_count(bindings);
+			if (count > 0) {
+				obs_data_t *binding = obs_data_array_item(bindings, 0);
+				if (binding) {
+					const char *key = obs_data_get_string(binding, "key");
+					bool shift = obs_data_get_bool(binding, "shift");
+					bool control = obs_data_get_bool(binding, "control");
+					bool alt = obs_data_get_bool(binding, "alt");
+					bool command = obs_data_get_bool(binding, "command");
+					
+					QStringList parts;
+					if (control) parts << "Ctrl";
+					if (shift) parts << "Shift";
+					if (alt) parts << "Alt";
+					if (command) parts << "Cmd";
+					if (key && *key) {
+						QString keyStr = QString(key).toUpper();
+						if (keyStr.startsWith("OBS_KEY_"))
+							keyStr = keyStr.mid(8);
+						parts << keyStr;
+					}
+					markerObj["hotkey"] = parts.join("+");
+					obs_data_release(binding);
+				}
+			}
+		}
+		
+		markersArray.append(markerObj);
+	}
+	
+	QJsonObject exportObj;
+	exportObj["version"] = "2.0";
+	exportObj["pluginName"] = "obs-named-chapter-hotkeys";
+	exportObj["exportedAt"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+	exportObj["profile"] = currentProfileName;
+	exportObj["enableComments"] = g_enableComments;
+	exportObj["markers"] = markersArray;
+	
+	QJsonDocument doc(exportObj);
+	QFile file(filePath);
+	if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+		file.write(doc.toJson(QJsonDocument::Indented));
+		file.close();
+		blog(LOG_INFO, "Config exported to: %s", qPrintable(filePath));
+	}
+}
+
+void ChapterHotkeyUI::importConfig(const QString &filePath)
+{
+	QFile file(filePath);
+	if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+		QMessageBox::warning(this, "导入失败", "无法打开文件：" + filePath);
+		return;
+	}
+	
+	QByteArray data = file.readAll();
+	file.close();
+	
+	QJsonDocument doc = QJsonDocument::fromJson(data);
+	if (!doc.isObject()) {
+		QMessageBox::warning(this, "导入失败", "文件格式无效。");
+		return;
+	}
+	
+	QJsonObject importObj = doc.object();
+	QJsonArray markersArray = importObj["markers"].toArray();
+	
+	if (markersArray.isEmpty()) {
+		QMessageBox::warning(this, "导入失败", "配置文件中没有标记数据。");
+		return;
+	}
+	
+	// 询问是替换还是合并
+	auto ret = QMessageBox::question(this, "导入配置",
+		QString("检测到 %1 个标记。\n\n"
+			"点击「Yes」替换当前所有标记\n"
+			"点击「No」合并到当前标记列表").arg(markersArray.size()),
+		QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+	
+	if (ret == QMessageBox::Cancel) return;
+	
+	bool replace = (ret == QMessageBox::Yes);
+	
+	if (replace) {
+		while (ui->listWidget->count() > 0) {
+			delete ui->listWidget->takeItem(0);
+		}
+	}
+	
+	int imported = 0;
+	for (int i = 0; i < markersArray.size(); i++) {
+		QJsonObject markerObj = markersArray[i].toObject();
+		QString name = markerObj["name"].toString();
+		QString uuid = markerObj["uuid"].toString();
+		QString color = markerObj["color"].toString();
+		QString hotkeyStr = markerObj["hotkey"].toString();
+		
+		if (name.isEmpty()) continue;
+		if (uuid.isEmpty()) {
+			uuid = "chapter_hotkey_" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+		}
+		
+		OBSDataArrayAutoRelease bindings = nullptr;
+		if (!hotkeyStr.isEmpty()) {
+			bindings = obs_data_array_create();
+			OBSDataAutoRelease binding = obs_data_create();
+			
+			QStringList parts = hotkeyStr.split("+");
+			QString keyStr;
+			bool shift = false, control = false, alt = false, command = false;
+			
+			for (const QString &part : parts) {
+				QString p = part.trimmed().toUpper();
+				if (p == "CTRL" || p == "CONTROL") control = true;
+				else if (p == "SHIFT") shift = true;
+				else if (p == "ALT") alt = true;
+				else if (p == "CMD" || p == "COMMAND") command = true;
+				else {
+					if (p.startsWith("NUM"))
+						keyStr = "OBS_KEY_NUMPAD" + p.mid(3);
+					else
+						keyStr = "OBS_KEY_" + p;
+				}
+			}
+			
+			obs_data_set_string(binding, "key", keyStr.toUtf8().constData());
+			obs_data_set_bool(binding, "shift", shift);
+			obs_data_set_bool(binding, "control", control);
+			obs_data_set_bool(binding, "alt", alt);
+			obs_data_set_bool(binding, "command", command);
+			obs_data_array_push_back(bindings, binding);
+		}
+		
+		auto hkItem = new ChapterHotkeyItem(uuid, name.toUtf8().constData(), bindings,
+			color.isEmpty() ? "#718637" : color);
+		ui->listWidget->addItem(hkItem);
+		imported++;
+	}
+	
+	// 恢复注释设置
+	if (importObj.contains("enableComments")) {
+		g_enableComments = importObj["enableComments"].toBool();
+		if (enableCommentsCheckBox)
+			enableCommentsCheckBox->setChecked(g_enableComments);
+	}
+	
+	if (importObj.contains("profile")) {
+		currentProfileName = importObj["profile"].toString();
+	}
+	
+	ui->listWidget->sortItems();
+	saveToExternalConfig();
+	refreshProfileCombo();
+	
+	QMessageBox::information(this, "导入成功",
+		QString("已%1 %2 个标记。").arg(replace ? "导入" : "合并").arg(imported));
+}
+
+void ChapterHotkeyUI::onExportClicked()
+{
+	QString defaultName = "chapter-markers-config";
+	if (!currentProfileName.isEmpty()) {
+		defaultName = currentProfileName;
+	}
+	
+	QString filePath = QFileDialog::getSaveFileName(this,
+		"导出标记配置", defaultName + ".json",
+		"JSON 文件 (*.json);;所有文件 (*.*)");
+	
+	if (!filePath.isEmpty()) {
+		exportConfig(filePath);
+		QMessageBox::information(this, "导出成功",
+			QString("配置已导出到：\n%1").arg(filePath));
+	}
+}
+
+void ChapterHotkeyUI::onImportClicked()
+{
+	QString filePath = QFileDialog::getOpenFileName(this,
+		"导入标记配置", "",
+		"JSON 文件 (*.json);;所有文件 (*.*)");
+	
+	if (!filePath.isEmpty()) {
+		importConfig(filePath);
+	}
+}
+
+// ============================================================================
+// OBS 热键数据保存/加载
+// ============================================================================
 void ChapterHotkeyUI::LoadHotkeys(obs_data_t *data)
 {
 	ui->listWidget->clear();
@@ -424,6 +995,9 @@ void ChapterHotkeyUI::SaveHotkeys(obs_data_t *data)
 	saveToExternalConfig();
 }
 
+// ============================================================================
+// ChapterHotkeyItem
+// ============================================================================
 ChapterHotkeyItem::ChapterHotkeyItem(const QString &id, const char *name,
 				     obs_data_array_t *bindings, const QString &color)
 	: QListWidgetItem(nullptr),
@@ -508,6 +1082,9 @@ static QString g_pendingColorHex;
 
 static void ShowCommentDialog();
 
+// ============================================================================
+// 热键按下处理 - 改进重入保护
+// ============================================================================
 void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 			      obs_hotkey_t *, bool pressed)
 {
@@ -519,8 +1096,15 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 			return;
 		}
 		
-		// 如果注释窗口已打开，不创建任何标记
+		// 【改进】使用原子标志进行严格的重入保护
+		// 如果注释窗口已打开或正在创建中，直接忽略
 		if (ChapterWithCommentDialog::IsDialogOpen()) {
+			blog(LOG_INFO, "Hotkey ignored: comment dialog is already open");
+			return;
+		}
+		
+		if (g_showDialogPending.exchange(true)) {
+			blog(LOG_INFO, "Hotkey ignored: dialog creation already pending");
 			return;
 		}
 		
@@ -536,6 +1120,20 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 				chapterName = "(" + colorName.toStdString() + ") " + chapterName;
 			}
 			obs_frontend_recording_add_chapter(chapterName.c_str());
+			
+			// 通知实时预览面板
+			if (g_livePanel) {
+				QMetaObject::invokeMethod(g_livePanel, [hk]() {
+					if (g_livePanel) {
+						g_livePanel->addMarker(
+							QString::fromStdString(hk->getChapterName()),
+							hk->getColor(),
+							"");
+					}
+				}, Qt::QueuedConnection);
+			}
+			
+			g_showDialogPending.store(false);
 			return;
 		}
 		
@@ -548,14 +1146,22 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 		}
 		obs_frontend_recording_add_chapter(initialChapterName.c_str());
 		
-		QTimer::singleShot(0, []() {
+		// 【改进】使用 QMetaObject::invokeMethod 安全地在 UI 线程中打开对话框
+		QMetaObject::invokeMethod(QCoreApplication::instance(), []() {
 			ShowCommentDialog();
-		});
+			g_showDialogPending.store(false);
+		}, Qt::QueuedConnection);
 	}
 }
 
 static void ShowCommentDialog()
 {
+	// 二次检查：确保不会重复打开
+	if (ChapterWithCommentDialog::IsDialogOpen()) {
+		blog(LOG_WARNING, "ShowCommentDialog: dialog already open, aborting");
+		return;
+	}
+	
 	string nameInput = g_pendingChapterName.toStdString();
 	string commentInput;
 	QString selectedColor = g_pendingColorHex; // 默认使用触发时的颜色
@@ -585,6 +1191,18 @@ static void ShowCommentDialog()
 			finalChapterName = "(" + colorName.toStdString() + ") " + finalChapterName;
 		}
 		obs_frontend_recording_add_chapter(finalChapterName.c_str());
+		
+		// 通知实时预览面板
+		if (g_livePanel) {
+			QString markerName = QString::fromStdString(nameInput);
+			QString markerColor = selectedColor;
+			QString markerComment = QString::fromStdString(commentInput);
+			QMetaObject::invokeMethod(g_livePanel, [markerName, markerColor, markerComment]() {
+				if (g_livePanel) {
+					g_livePanel->addMarker(markerName, markerColor, markerComment);
+				}
+			}, Qt::QueuedConnection);
+		}
 	} else {
 		// 用户取消：创建标记 A2@###，表示这组标记需要被删除
 		string cancelChapterName = nameInput + "@###";
@@ -596,6 +1214,9 @@ static void ShowCommentDialog()
 	}
 }
 
+// ============================================================================
+// ChapterHotkeyItem data/setData
+// ============================================================================
 QVariant ChapterHotkeyItem::data(int role) const
 {
 	if (role == Name)
@@ -633,6 +1254,9 @@ void ChapterHotkeyItem::setData(int role, const QVariant &value)
 	}
 }
 
+// ============================================================================
+// ChapterWithCommentDialog - 改进重入保护
+// ============================================================================
 ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(parent)
 {
 	setModal(true);
@@ -681,7 +1305,8 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	connect(buttonbox, &QDialogButtonBox::accepted, this, &QDialog::accept);
 	connect(buttonbox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 	
-	s_isDialogOpen = true;
+	// 【改进】使用原子标志
+	s_isDialogOpen.store(true);
 	loadWindowState();
 	
 	// 延迟设置焦点，确保对话框完全初始化并显示
@@ -720,7 +1345,7 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 ChapterWithCommentDialog::~ChapterWithCommentDialog()
 {
 	saveWindowState();
-	s_isDialogOpen = false;
+	s_isDialogOpen.store(false);
 }
 
 void ChapterWithCommentDialog::closeEvent(QCloseEvent *event)
@@ -855,6 +1480,15 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 						   const QString &placeHolder,
 						   QString *colorInput)
 {
+	// 【改进】使用互斥锁防止多线程同时创建对话框
+	QMutexLocker locker(&s_dialogMutex);
+	
+	// 再次检查标志（双重检查锁定）
+	if (s_isDialogOpen.load()) {
+		blog(LOG_WARNING, "AskForNameAndComment: dialog already open");
+		return false;
+	}
+	
 	ChapterWithCommentDialog dialog(parent);
 	dialog.setWindowTitle(title);
 	
@@ -941,6 +1575,9 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 	return true;
 }
 
+// ============================================================================
+// ChapterNameDialog
+// ============================================================================
 ChapterNameDialog::ChapterNameDialog(QWidget *parent) : QDialog(parent)
 {
 	setModal(true);
@@ -1001,6 +1638,213 @@ bool ChapterNameDialog::AskForName(QWidget *parent, const QString &title,
 	return true;
 }
 
+// ============================================================================
+// MarkerLivePanel - 实时标记预览面板 (OBS Dock Widget)
+// ============================================================================
+MarkerLivePanel::MarkerLivePanel(QWidget *parent)
+	: QDockWidget("标记实时预览", parent)
+{
+	setObjectName("MarkerLivePanel");
+	setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetClosable);
+	
+	QWidget *container = new QWidget(this);
+	QVBoxLayout *mainLayout = new QVBoxLayout(container);
+	mainLayout->setSpacing(4);
+	mainLayout->setContentsMargins(6, 6, 6, 6);
+	
+	// 状态栏
+	QHBoxLayout *statusLayout = new QHBoxLayout;
+	statusLabel = new QLabel("⏹ 未录制", container);
+	statusLabel->setStyleSheet("font-weight: bold; color: #999;");
+	statusLayout->addWidget(statusLabel);
+	
+	statusLayout->addStretch();
+	
+	timerLabel = new QLabel("00:00:00", container);
+	timerLabel->setStyleSheet("font-family: monospace; font-size: 14px; font-weight: bold; color: #ccc;");
+	statusLayout->addWidget(timerLabel);
+	mainLayout->addLayout(statusLayout);
+	
+	// 标记列表
+	markerList = new QListWidget(container);
+	markerList->setStyleSheet(
+		"QListWidget { background: #1e1e2e; border: 1px solid #333; border-radius: 4px; }"
+		"QListWidget::item { padding: 4px 8px; border-bottom: 1px solid #2a2a3e; color: #e0e0e0; }"
+		"QListWidget::item:selected { background: #3a3a5e; }"
+	);
+	markerList->setAlternatingRowColors(false);
+	mainLayout->addWidget(markerList, 1);
+	
+	// 底部按钮
+	QHBoxLayout *btnLayout = new QHBoxLayout;
+	
+	clearBtn = new QPushButton("🗑 清空", container);
+	clearBtn->setToolTip("清空标记列表");
+	btnLayout->addWidget(clearBtn);
+	
+	copyBtn = new QPushButton("📋 复制摘要", container);
+	copyBtn->setToolTip("复制标记摘要到剪贴板");
+	btnLayout->addWidget(copyBtn);
+	
+	mainLayout->addLayout(btnLayout);
+	
+	setWidget(container);
+	
+	// 定时器 - 更新录制时间
+	recordingTimer = new QTimer(this);
+	recordingTimer->setInterval(500);
+	connect(recordingTimer, &QTimer::timeout, this, &MarkerLivePanel::updateRecordingTime);
+	
+	// 按钮连接
+	connect(clearBtn, &QPushButton::clicked, this, &MarkerLivePanel::clearMarkers);
+	connect(copyBtn, &QPushButton::clicked, this, &MarkerLivePanel::copyMarkersToClipboard);
+	
+	// 监听OBS录制事件
+	auto recordingStartedCb = [](enum obs_frontend_event event, void *data) {
+		auto panel = static_cast<MarkerLivePanel *>(data);
+		if (event == OBS_FRONTEND_EVENT_RECORDING_STARTED) {
+			QMetaObject::invokeMethod(panel, &MarkerLivePanel::onRecordingStarted, Qt::QueuedConnection);
+		} else if (event == OBS_FRONTEND_EVENT_RECORDING_STOPPED) {
+			QMetaObject::invokeMethod(panel, &MarkerLivePanel::onRecordingStopped, Qt::QueuedConnection);
+		}
+	};
+	obs_frontend_add_event_callback(recordingStartedCb, this);
+	
+	// 如果已经在录制
+	if (obs_frontend_recording_active()) {
+		onRecordingStarted();
+	}
+}
+
+MarkerLivePanel::~MarkerLivePanel()
+{
+	if (recordingTimer->isActive()) {
+		recordingTimer->stop();
+	}
+}
+
+void MarkerLivePanel::onRecordingStarted()
+{
+	isRecording = true;
+	recordingStartTime = QDateTime::currentMSecsSinceEpoch();
+	statusLabel->setText("🔴 录制中");
+	statusLabel->setStyleSheet("font-weight: bold; color: #ff4444;");
+	clearMarkers();
+	recordingTimer->start();
+}
+
+void MarkerLivePanel::onRecordingStopped()
+{
+	isRecording = false;
+	recordingTimer->stop();
+	statusLabel->setText("⏹ 录制已停止");
+	statusLabel->setStyleSheet("font-weight: bold; color: #999;");
+}
+
+void MarkerLivePanel::updateRecordingTime()
+{
+	if (!isRecording) return;
+	uint64_t elapsed = QDateTime::currentMSecsSinceEpoch() - recordingStartTime;
+	timerLabel->setText(formatTime(elapsed));
+}
+
+void MarkerLivePanel::addMarker(const QString &name, const QString &color, const QString &comment)
+{
+	uint64_t elapsed = 0;
+	if (isRecording && recordingStartTime > 0) {
+		elapsed = QDateTime::currentMSecsSinceEpoch() - recordingStartTime;
+	}
+	
+	LiveMarkerEntry entry;
+	entry.index = markers.size() + 1;
+	entry.name = name;
+	entry.color = color;
+	entry.comment = comment;
+	entry.timestampMs = elapsed;
+	entry.timeCode = formatTime(elapsed);
+	
+	markers.append(entry);
+	
+	// 添加到列表
+	QString displayText = QString("#%1  [%2]  %3")
+		.arg(entry.index, 2, 10, QChar('0'))
+		.arg(entry.timeCode)
+		.arg(name);
+	if (!comment.isEmpty()) {
+		displayText += "  💬 " + comment;
+	}
+	
+	QListWidgetItem *item = new QListWidgetItem(displayText);
+	
+	// 设置颜色图标
+	if (!color.isEmpty() && color != "none") {
+		QColor circleColor = getColorFromHex(color);
+		int diameter = 12;
+		QPixmap pixmap(diameter, diameter);
+		pixmap.fill(Qt::transparent);
+		QPainter painter(&pixmap);
+		painter.setRenderHint(QPainter::Antialiasing);
+		painter.setBrush(circleColor);
+		painter.setPen(QPen(QColor("#555555"), 1));
+		painter.drawEllipse(0, 0, diameter - 1, diameter - 1);
+		painter.end();
+		item->setIcon(QIcon(pixmap));
+	}
+	
+	markerList->addItem(item);
+	markerList->scrollToBottom();
+	
+	blog(LOG_INFO, "Live panel: marker #%d added - %s at %s",
+		entry.index, qPrintable(name), qPrintable(entry.timeCode));
+}
+
+void MarkerLivePanel::clearMarkers()
+{
+	markers.clear();
+	markerList->clear();
+}
+
+QString MarkerLivePanel::formatTime(uint64_t ms) const
+{
+	int totalSeconds = ms / 1000;
+	int hours = totalSeconds / 3600;
+	int minutes = (totalSeconds % 3600) / 60;
+	int seconds = totalSeconds % 60;
+	return QString("%1:%2:%3")
+		.arg(hours, 2, 10, QChar('0'))
+		.arg(minutes, 2, 10, QChar('0'))
+		.arg(seconds, 2, 10, QChar('0'));
+}
+
+void MarkerLivePanel::copyMarkersToClipboard()
+{
+	if (markers.isEmpty()) {
+		return;
+	}
+	
+	QString text;
+	text += "# 标记摘要\n\n";
+	text += "| # | 时间码 | 名称 | 颜色 | 注释 |\n";
+	text += "|---|--------|------|------|------|\n";
+	
+	for (const auto &m : markers) {
+		text += QString("| %1 | %2 | %3 | %4 | %5 |\n")
+			.arg(m.index)
+			.arg(m.timeCode)
+			.arg(m.name)
+			.arg(getColorName(m.color))
+			.arg(m.comment);
+	}
+	
+	QClipboard *clipboard = QApplication::clipboard();
+	if (clipboard) {
+		clipboard->setText(text);
+	}
+}
+
+// ============================================================================
+// 插件初始化和保存回调
+// ============================================================================
 static void LoadSaveHotkeys(obs_data_t *save_data, bool saving, void *)
 {
 	if (saving) {
@@ -1040,4 +1884,8 @@ extern "C" void InitChapterHotkeys()
 
 	QAction::connect(action, &QAction::triggered, hk_edit,
 			 &ChapterHotkeyUI::ShowHideDialog);
+	
+	// 创建实时标记预览面板 (OBS Dock)
+	g_livePanel = new MarkerLivePanel(window);
+	obs_frontend_add_dock_by_id("MarkerLivePanel", "标记实时预览", g_livePanel);
 }
