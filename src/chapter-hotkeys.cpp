@@ -934,16 +934,8 @@ void ChapterHotkeyUI::refreshAllHotkeyDisplays()
 		auto *item = dynamic_cast<ChapterHotkeyItem *>(ui->listWidget->item(i));
 		if (!item) continue;
 		
-		// 重新从 OBS 获取当前热键的绑定数据
-		obs_hotkey_id hkId = item->getHotkey();
-		if (hkId != OBS_INVALID_HOTKEY_ID) {
-			OBSDataArrayAutoRelease newBindings = obs_hotkey_save(hkId);
-			if (newBindings) {
-				item->setData(Bindings, QVariant::fromValue(static_cast<void *>(obs_data_array_ref(newBindings))));
-			}
-		}
-		
 		// 刷新显示文本（包括快捷键）
+		// data(Bindings) 会动态调用 obs_hotkey_save() 获取最新绑定数据
 		item->updateDisplayText();
 	}
 	
