@@ -128,11 +128,13 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 
 	QVBoxLayout *mainLayout = qobject_cast<QVBoxLayout *>(layout());
 	if (mainLayout) {
-		// === 配置方案区域 ===
-		QGroupBox *profileGroup = new QGroupBox("配置方案", this);
+		mainLayout->setSpacing(4);
+		mainLayout->setContentsMargins(8, 8, 8, 8);
+		
+		// === 方案选择行（紧凑单行，无GroupBox） ===
 		QHBoxLayout *profileLayout = new QHBoxLayout;
 		profileLayout->setSpacing(4);
-		profileLayout->setContentsMargins(4, 2, 4, 2);
+		profileLayout->setContentsMargins(0, 0, 0, 0);
 		
 		profileCombo = new QComboBox(this);
 		profileCombo->setMinimumWidth(120);
@@ -141,56 +143,146 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		
 		saveProfileBtn = new QPushButton(this);
 		saveProfileBtn->setToolTip("新建方案");
-		saveProfileBtn->setFixedSize(28, 28);
+		saveProfileBtn->setFixedSize(26, 26);
 		saveProfileBtn->setIcon(QIcon(":/res/images/plus.svg"));
-		saveProfileBtn->setIconSize(QSize(16, 16));
+		saveProfileBtn->setIconSize(QSize(14, 14));
 		profileLayout->addWidget(saveProfileBtn);
 		
 		deleteProfileBtn = new QPushButton(this);
 		deleteProfileBtn->setToolTip("删除选中方案");
-		deleteProfileBtn->setFixedSize(28, 28);
+		deleteProfileBtn->setFixedSize(26, 26);
 		deleteProfileBtn->setIcon(QIcon(":/res/images/minus.svg"));
-		deleteProfileBtn->setIconSize(QSize(16, 16));
+		deleteProfileBtn->setIconSize(QSize(14, 14));
 		profileLayout->addWidget(deleteProfileBtn);
 		
 		renameProfileBtn = new QPushButton(this);
 		renameProfileBtn->setToolTip("重命名方案");
-		renameProfileBtn->setFixedSize(28, 28);
+		renameProfileBtn->setFixedSize(26, 26);
 		renameProfileBtn->setIcon(QIcon(":/res/images/cogs.svg"));
-		renameProfileBtn->setIconSize(QSize(16, 16));
+		renameProfileBtn->setIconSize(QSize(14, 14));
 		profileLayout->addWidget(renameProfileBtn);
 		
+		mainLayout->insertLayout(0, profileLayout);
+		
+		// === 标记列表（由 .ui 定义，已在 mainLayout 中） ===
+		// listWidget 在 .ui 中是 index 0，insertLayout(0) 后变成 index 1
+		
+		// === 工具栏 + 颜色按钮合并行 ===
+		// .ui 定义了 toolbar(index 2) 和 colorButtonsWidget(index 3)
+		// 隐藏原有的 toolbar 和颜色按钮区域，用新的合并行替换
+		ui->toolbar->setVisible(false);
+		ui->colorButtonsWidget->setVisible(false);
+		
+		QHBoxLayout *toolColorLayout = new QHBoxLayout;
+		toolColorLayout->setSpacing(2);
+		toolColorLayout->setContentsMargins(0, 0, 0, 0);
+		
+		// 工具按钮：添加、删除、重命名、刷新
+		QPushButton *addBtn = new QPushButton(this);
+		addBtn->setFixedSize(26, 26);
+		addBtn->setIcon(QIcon(":/res/images/plus.svg"));
+		addBtn->setIconSize(QSize(14, 14));
+		addBtn->setToolTip("添加标记");
+		connect(addBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::on_actionAddHotkey_triggered);
+		toolColorLayout->addWidget(addBtn);
+		
+		QPushButton *removeBtn = new QPushButton(this);
+		removeBtn->setFixedSize(26, 26);
+		removeBtn->setIcon(QIcon(":/res/images/minus.svg"));
+		removeBtn->setIconSize(QSize(14, 14));
+		removeBtn->setToolTip("删除标记");
+		connect(removeBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::on_actionRemoveHotkey_triggered);
+		toolColorLayout->addWidget(removeBtn);
+		
+		QPushButton *renameBtn = new QPushButton(this);
+		renameBtn->setFixedSize(26, 26);
+		renameBtn->setIcon(QIcon(":/res/images/cogs.svg"));
+		renameBtn->setIconSize(QSize(14, 14));
+		renameBtn->setToolTip("重命名标记");
+		connect(renameBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::on_actionRenameHotkey_triggered);
+		toolColorLayout->addWidget(renameBtn);
+		
 		refreshHotkeysBtn = new QPushButton(this);
-		refreshHotkeysBtn->setToolTip("刷新快捷键显示");
-		refreshHotkeysBtn->setFixedSize(28, 28);
+		refreshHotkeysBtn->setFixedSize(26, 26);
 		refreshHotkeysBtn->setIcon(QIcon(":/res/images/revert.svg"));
-		refreshHotkeysBtn->setIconSize(QSize(16, 16));
-		profileLayout->addWidget(refreshHotkeysBtn);
+		refreshHotkeysBtn->setIconSize(QSize(14, 14));
+		refreshHotkeysBtn->setToolTip("刷新快捷键显示");
+		toolColorLayout->addWidget(refreshHotkeysBtn);
 		
-		profileGroup->setLayout(profileLayout);
-		mainLayout->insertWidget(0, profileGroup);
+		// 分隔线
+		QFrame *sep = new QFrame(this);
+		sep->setFrameShape(QFrame::VLine);
+		sep->setFrameShadow(QFrame::Sunken);
+		sep->setFixedHeight(20);
+		toolColorLayout->addWidget(sep);
 		
-		// === 启用注释复选框 ===
-		enableCommentsCheckBox = new QCheckBox("启用标记注释", this);
+		// 颜色按钮（缩小到20px）
+		auto makeColorBtn = [this, toolColorLayout](const char *slot, const QString &color) {
+			QPushButton *btn = new QPushButton(this);
+			btn->setFixedSize(20, 20);
+			btn->setStyleSheet(
+				QString("QPushButton { background-color: %1; border-radius: 10px; border: 1px solid #333; } "
+					"QPushButton:hover { border: 2px solid %2; }")
+				.arg(color)
+				.arg(color == "#FFFFFF" || color == "#D0A12B" ? "black" : "white"));
+			connect(btn, &QPushButton::clicked, this, slot);
+			toolColorLayout->addWidget(btn);
+		};
+		makeColorBtn(SLOT(on_colorButtonGreen_clicked()), "#718637");
+		makeColorBtn(SLOT(on_colorButtonRed_clicked()), "#D22C36");
+		makeColorBtn(SLOT(on_colorButtonPurple_clicked()), "#AF8BB1");
+		makeColorBtn(SLOT(on_colorButtonOrange_clicked()), "#E96F24");
+		makeColorBtn(SLOT(on_colorButtonYellow_clicked()), "#D0A12B");
+		makeColorBtn(SLOT(on_colorButtonWhite_clicked()), "#FFFFFF");
+		makeColorBtn(SLOT(on_colorButtonBlue_clicked()), "#428DFC");
+		makeColorBtn(SLOT(on_colorButtonCyan_clicked()), "#19F4D6");
+		
+		toolColorLayout->addStretch();
+		
+		// 插入到 listWidget 之后（隐藏的toolbar/colorButtons之前的位置）
+		// mainLayout: [0]profileLayout [1]listWidget [2]toolbar(hidden) [3]colors(hidden) [4]okLayout
+		mainLayout->insertLayout(2, toolColorLayout);
+		
+		// === 底部栏：注释开关 + 导入导出 + 确定 ===
+		// 隐藏原有的 OK 按钮行
+		ui->accept->setVisible(false);
+		
+		QHBoxLayout *bottomLayout = new QHBoxLayout;
+		bottomLayout->setSpacing(6);
+		bottomLayout->setContentsMargins(0, 4, 0, 0);
+		
+		// 注释复选框
+		enableCommentsCheckBox = new QCheckBox("注释", this);
 		enableCommentsCheckBox->setChecked(false);
 		connect(enableCommentsCheckBox, &QCheckBox::toggled, [](bool checked) {
 			g_enableComments = checked;
 		});
-		mainLayout->insertWidget(1, enableCommentsCheckBox);
+		bottomLayout->addWidget(enableCommentsCheckBox);
 		
-		// === 导入/导出按钮 ===
-		QHBoxLayout *ioLayout = new QHBoxLayout;
-		ioLayout->setSpacing(4);
+		bottomLayout->addStretch();
 		
-		exportBtn = new QPushButton("📤 导出配置", this);
-		exportBtn->setToolTip("导出标记配置到文件");
-		ioLayout->addWidget(exportBtn);
+		// 导出/导入按钮（图标式紧凑按钮）
+		exportBtn = new QPushButton(this);
+		exportBtn->setToolTip("导出配置");
+		exportBtn->setFixedSize(26, 26);
+		exportBtn->setText("📤");
+		exportBtn->setStyleSheet("QPushButton { font-size: 14px; }");
+		bottomLayout->addWidget(exportBtn);
 		
-		importBtn = new QPushButton("📥 导入配置", this);
-		importBtn->setToolTip("从文件导入标记配置");
-		ioLayout->addWidget(importBtn);
+		importBtn = new QPushButton(this);
+		importBtn->setToolTip("导入配置");
+		importBtn->setFixedSize(26, 26);
+		importBtn->setText("📥");
+		importBtn->setStyleSheet("QPushButton { font-size: 14px; }");
+		bottomLayout->addWidget(importBtn);
 		
-		mainLayout->addLayout(ioLayout);
+		// 确定按钮
+		QPushButton *okBtn = new QPushButton("确定", this);
+		okBtn->setFixedWidth(50);
+		connect(okBtn, &QPushButton::clicked, this, &QDialog::accept);
+		bottomLayout->addWidget(okBtn);
+		
+		mainLayout->addLayout(bottomLayout);
 		
 		// === 连接信号 ===
 		connect(profileCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -221,6 +313,9 @@ void ChapterHotkeyUI::ShowHideDialog()
 {
 	if (!isVisible()) {
 		setVisible(true);
+		// 每次打开对话框时刷新快捷键显示，确保显示最新的绑定状态
+		refreshAllHotkeyDisplays();
+		plog(LOG_INFO, "Dialog opened, hotkey displays refreshed");
 	} else {
 		close();
 	}
