@@ -20,8 +20,10 @@
 #include <QPushButton>
 #include <QDockWidget>
 #include <QListWidget>
+#include <QJsonArray>
 #include <QMutex>
 #include <QAtomicInt>
+#include <QTimer>
 #include <string>
 #include <memory>
 #include <atomic>
