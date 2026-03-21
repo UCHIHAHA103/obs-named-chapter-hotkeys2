@@ -251,11 +251,13 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		// mainLayout: [0]profileLayout [1]listWidget [2]toolbar(hidden) [3]colors(hidden) [4]okLayout
 		mainLayout->insertLayout(2, toolColorLayout);
 		
-		// === 分隔线（工具栏与底部栏之间） ===
+		// === 分隔线（工具栏与底部栏之间，紧凑无多余间距） ===
 		QFrame *hLine = new QFrame(this);
 		hLine->setFrameShape(QFrame::HLine);
-		hLine->setFrameShadow(QFrame::Sunken);
-		hLine->setStyleSheet("QFrame { color: #444; }");
+		hLine->setFrameShadow(QFrame::Plain);
+		hLine->setFixedHeight(1);
+		hLine->setStyleSheet("QFrame { background: #444; border: none; margin: 0; padding: 0; }");
+		hLine->setContentsMargins(0, 0, 0, 0);
 		mainLayout->addWidget(hLine);
 		
 		// === 底部栏：注释开关 + 导入导出 + 确定 ===
@@ -302,9 +304,8 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		
 		mainLayout->addLayout(bottomLayout);
 		
-		// === 列表项分隔线样式 ===
-		ui->listWidget->setStyleSheet(
-			"QListWidget::item { border-bottom: 1px solid #2a2a2a; }");
+		// 列表项分隔线由 HotkeyItemDelegate::paint 绘制，不使用 stylesheet
+		// （stylesheet 会覆盖 Qt 默认的选中/hover 高亮样式）
 		
 		// === 连接信号 ===
 		connect(profileCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -1120,6 +1121,11 @@ void HotkeyItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &op
 		
 		painter->drawText(textRect, Qt::AlignRight | Qt::AlignVCenter, displayHotkey);
 	}
+	
+	// 绘制列表项底部分隔线（替代 QListWidget stylesheet，避免破坏选中高亮）
+	painter->setPen(QPen(QColor(0x2a, 0x2a, 0x2a), 1));
+	int y = option.rect.bottom();
+	painter->drawLine(option.rect.left(), y, option.rect.right(), y);
 	
 	painter->restore();
 }
