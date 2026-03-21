@@ -217,15 +217,22 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		sep->setFixedHeight(20);
 		toolColorLayout->addWidget(sep);
 		
-		// 颜色按钮（缩小到20px）
-		auto makeColorBtn = [this, toolColorLayout](std::function<void()> callback, const QString &color) {
+		// 颜色按钮（正圆 22x22）
+		const int colorBtnSize = 22;
+		const int colorBtnRadius = colorBtnSize / 2;
+		auto makeColorBtn = [this, toolColorLayout, colorBtnSize, colorBtnRadius](std::function<void()> callback, const QString &color) {
 			QPushButton *btn = new QPushButton(this);
-			btn->setFixedSize(20, 20);
+			btn->setFixedSize(colorBtnSize, colorBtnSize);
+			btn->setMinimumSize(colorBtnSize, colorBtnSize);
+			btn->setMaximumSize(colorBtnSize, colorBtnSize);
+			btn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 			btn->setStyleSheet(
-				QString("QPushButton { background-color: %1; border-radius: 10px; border: 1px solid #333; } "
+				QString("QPushButton { background-color: %1; border-radius: %3px; border: 1px solid #333; min-width: %4px; min-height: %4px; max-width: %4px; max-height: %4px; padding: 0px; } "
 					"QPushButton:hover { border: 2px solid %2; }")
 				.arg(color)
-				.arg(color == "#FFFFFF" || color == "#D0A12B" ? "black" : "white"));
+				.arg(color == "#FFFFFF" || color == "#D0A12B" ? "black" : "white")
+				.arg(colorBtnRadius)
+				.arg(colorBtnSize));
 			connect(btn, &QPushButton::clicked, this, callback);
 			toolColorLayout->addWidget(btn);
 		};
@@ -244,13 +251,20 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		// mainLayout: [0]profileLayout [1]listWidget [2]toolbar(hidden) [3]colors(hidden) [4]okLayout
 		mainLayout->insertLayout(2, toolColorLayout);
 		
+		// === 分隔线（工具栏与底部栏之间） ===
+		QFrame *hLine = new QFrame(this);
+		hLine->setFrameShape(QFrame::HLine);
+		hLine->setFrameShadow(QFrame::Sunken);
+		hLine->setStyleSheet("QFrame { color: #444; }");
+		mainLayout->addWidget(hLine);
+		
 		// === 底部栏：注释开关 + 导入导出 + 确定 ===
 		// 隐藏原有的 OK 按钮行
 		ui->accept->setVisible(false);
 		
 		QHBoxLayout *bottomLayout = new QHBoxLayout;
 		bottomLayout->setSpacing(6);
-		bottomLayout->setContentsMargins(0, 4, 0, 0);
+		bottomLayout->setContentsMargins(0, 2, 0, 0);
 		
 		// 注释复选框
 		enableCommentsCheckBox = new QCheckBox("注释", this);
@@ -262,28 +276,35 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		
 		bottomLayout->addStretch();
 		
-		// 导出/导入按钮（图标式紧凑按钮）
+		// 导出按钮（使用OBS主题SVG图标，风格一致）
 		exportBtn = new QPushButton(this);
 		exportBtn->setToolTip("导出配置");
 		exportBtn->setFixedSize(26, 26);
-		exportBtn->setText("📤");
-		exportBtn->setStyleSheet("QPushButton { font-size: 14px; }");
+		exportBtn->setIcon(QIcon::fromTheme("document-save-as",
+			QIcon(":/res/images/save.svg")));
+		exportBtn->setIconSize(QSize(14, 14));
 		bottomLayout->addWidget(exportBtn);
 		
+		// 导入按钮（使用OBS主题SVG图标，风格一致）
 		importBtn = new QPushButton(this);
 		importBtn->setToolTip("导入配置");
 		importBtn->setFixedSize(26, 26);
-		importBtn->setText("📥");
-		importBtn->setStyleSheet("QPushButton { font-size: 14px; }");
+		importBtn->setIcon(QIcon::fromTheme("document-open",
+			QIcon(":/res/images/revert.svg")));
+		importBtn->setIconSize(QSize(14, 14));
 		bottomLayout->addWidget(importBtn);
 		
-		// 确定按钮
+		// 确定按钮（加宽确保文字显示完整）
 		QPushButton *okBtn = new QPushButton("确定", this);
-		okBtn->setFixedWidth(50);
+		okBtn->setFixedWidth(60);
 		connect(okBtn, &QPushButton::clicked, this, &QDialog::accept);
 		bottomLayout->addWidget(okBtn);
 		
 		mainLayout->addLayout(bottomLayout);
+		
+		// === 列表项分隔线样式 ===
+		ui->listWidget->setStyleSheet(
+			"QListWidget::item { border-bottom: 1px solid #2a2a2a; }");
 		
 		// === 连接信号 ===
 		connect(profileCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
