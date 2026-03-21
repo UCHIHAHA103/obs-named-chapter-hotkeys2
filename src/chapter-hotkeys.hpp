@@ -207,7 +207,7 @@ struct LiveMarkerEntry {
 	uint64_t timestampMs; // 录制中的毫秒数
 };
 
-class MarkerLivePanel : public QDockWidget {
+class MarkerLivePanel : public QWidget {
 	Q_OBJECT
 
 public:

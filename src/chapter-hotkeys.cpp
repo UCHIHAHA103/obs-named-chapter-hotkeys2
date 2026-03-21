@@ -136,14 +136,16 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		profileCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 		profileLayout->addWidget(profileCombo);
 		
-		saveProfileBtn = new QPushButton("💾", this);
+		saveProfileBtn = new QPushButton("+", this);
 		saveProfileBtn->setToolTip("保存当前配置为方案");
 		saveProfileBtn->setFixedSize(28, 28);
+		saveProfileBtn->setStyleSheet("QPushButton { font-size: 18px; font-weight: bold; }");
 		profileLayout->addWidget(saveProfileBtn);
 		
-		deleteProfileBtn = new QPushButton("🗑", this);
+		deleteProfileBtn = new QPushButton("−", this);
 		deleteProfileBtn->setToolTip("删除选中方案");
 		deleteProfileBtn->setFixedSize(28, 28);
+		deleteProfileBtn->setStyleSheet("QPushButton { font-size: 18px; font-weight: bold; }");
 		profileLayout->addWidget(deleteProfileBtn);
 		
 		profileGroup->setLayout(profileLayout);
@@ -683,17 +685,8 @@ void ChapterHotkeyUI::onProfileComboChanged(int index)
 	QString profileName = profileCombo->currentText();
 	if (profileName.isEmpty() || profileName == "-- 选择方案 --") return;
 	
-	// 提示用户确认切换
-	auto ret = QMessageBox::question(this, "切换方案",
-		QString("确定要切换到方案「%1」吗？\n当前未保存的更改将丢失。").arg(profileName),
-		QMessageBox::Yes | QMessageBox::No);
-	
-	if (ret == QMessageBox::Yes) {
-		loadProfile(profileName);
-	} else {
-		// 恢复选择
-		refreshProfileCombo();
-	}
+	// 直接加载方案，无需二次确认
+	loadProfile(profileName);
 }
 
 void ChapterHotkeyUI::onSaveProfileClicked()
@@ -1640,33 +1633,32 @@ bool ChapterNameDialog::AskForName(QWidget *parent, const QString &title,
 
 // ============================================================================
 // MarkerLivePanel - 实时标记预览面板 (OBS Dock Widget)
+// 注意: 继承 QWidget 而非 QDockWidget，由 obs_frontend_add_dock_by_id 自动包裹为 Dock
 // ============================================================================
 MarkerLivePanel::MarkerLivePanel(QWidget *parent)
-	: QDockWidget("标记实时预览", parent)
+	: QWidget(parent)
 {
 	setObjectName("MarkerLivePanel");
-	setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetClosable);
 	
-	QWidget *container = new QWidget(this);
-	QVBoxLayout *mainLayout = new QVBoxLayout(container);
+	QVBoxLayout *mainLayout = new QVBoxLayout(this);
 	mainLayout->setSpacing(4);
 	mainLayout->setContentsMargins(6, 6, 6, 6);
 	
 	// 状态栏
 	QHBoxLayout *statusLayout = new QHBoxLayout;
-	statusLabel = new QLabel("⏹ 未录制", container);
+	statusLabel = new QLabel("⏹ 未录制", this);
 	statusLabel->setStyleSheet("font-weight: bold; color: #999;");
 	statusLayout->addWidget(statusLabel);
 	
 	statusLayout->addStretch();
 	
-	timerLabel = new QLabel("00:00:00", container);
+	timerLabel = new QLabel("00:00:00", this);
 	timerLabel->setStyleSheet("font-family: monospace; font-size: 14px; font-weight: bold; color: #ccc;");
 	statusLayout->addWidget(timerLabel);
 	mainLayout->addLayout(statusLayout);
 	
 	// 标记列表
-	markerList = new QListWidget(container);
+	markerList = new QListWidget(this);
 	markerList->setStyleSheet(
 		"QListWidget { background: #1e1e2e; border: 1px solid #333; border-radius: 4px; }"
 		"QListWidget::item { padding: 4px 8px; border-bottom: 1px solid #2a2a3e; color: #e0e0e0; }"
@@ -1678,17 +1670,15 @@ MarkerLivePanel::MarkerLivePanel(QWidget *parent)
 	// 底部按钮
 	QHBoxLayout *btnLayout = new QHBoxLayout;
 	
-	clearBtn = new QPushButton("🗑 清空", container);
+	clearBtn = new QPushButton("🗑 清空", this);
 	clearBtn->setToolTip("清空标记列表");
 	btnLayout->addWidget(clearBtn);
 	
-	copyBtn = new QPushButton("📋 复制摘要", container);
+	copyBtn = new QPushButton("📋 复制摘要", this);
 	copyBtn->setToolTip("复制标记摘要到剪贴板");
 	btnLayout->addWidget(copyBtn);
 	
 	mainLayout->addLayout(btnLayout);
-	
-	setWidget(container);
 	
 	// 定时器 - 更新录制时间
 	recordingTimer = new QTimer(this);
