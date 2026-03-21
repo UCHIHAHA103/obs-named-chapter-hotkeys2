@@ -1,6 +1,7 @@
 #include "chapter-hotkeys.hpp"
 #include "plugin-logger.h"
 
+#include <functional>
 #include <QCoreApplication>
 #include <QAction>
 #include <QKeyEvent>
@@ -217,7 +218,7 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		toolColorLayout->addWidget(sep);
 		
 		// 颜色按钮（缩小到20px）
-		auto makeColorBtn = [this, toolColorLayout](const char *slot, const QString &color) {
+		auto makeColorBtn = [this, toolColorLayout](std::function<void()> callback, const QString &color) {
 			QPushButton *btn = new QPushButton(this);
 			btn->setFixedSize(20, 20);
 			btn->setStyleSheet(
@@ -225,17 +226,17 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 					"QPushButton:hover { border: 2px solid %2; }")
 				.arg(color)
 				.arg(color == "#FFFFFF" || color == "#D0A12B" ? "black" : "white"));
-			connect(btn, &QPushButton::clicked, this, slot);
+			connect(btn, &QPushButton::clicked, this, callback);
 			toolColorLayout->addWidget(btn);
 		};
-		makeColorBtn(SLOT(on_colorButtonGreen_clicked()), "#718637");
-		makeColorBtn(SLOT(on_colorButtonRed_clicked()), "#D22C36");
-		makeColorBtn(SLOT(on_colorButtonPurple_clicked()), "#AF8BB1");
-		makeColorBtn(SLOT(on_colorButtonOrange_clicked()), "#E96F24");
-		makeColorBtn(SLOT(on_colorButtonYellow_clicked()), "#D0A12B");
-		makeColorBtn(SLOT(on_colorButtonWhite_clicked()), "#FFFFFF");
-		makeColorBtn(SLOT(on_colorButtonBlue_clicked()), "#428DFC");
-		makeColorBtn(SLOT(on_colorButtonCyan_clicked()), "#19F4D6");
+		makeColorBtn([this]() { on_colorButtonGreen_clicked(); }, "#718637");
+		makeColorBtn([this]() { on_colorButtonRed_clicked(); }, "#D22C36");
+		makeColorBtn([this]() { on_colorButtonPurple_clicked(); }, "#AF8BB1");
+		makeColorBtn([this]() { on_colorButtonOrange_clicked(); }, "#E96F24");
+		makeColorBtn([this]() { on_colorButtonYellow_clicked(); }, "#D0A12B");
+		makeColorBtn([this]() { on_colorButtonWhite_clicked(); }, "#FFFFFF");
+		makeColorBtn([this]() { on_colorButtonBlue_clicked(); }, "#428DFC");
+		makeColorBtn([this]() { on_colorButtonCyan_clicked(); }, "#19F4D6");
 		
 		toolColorLayout->addStretch();
 		
