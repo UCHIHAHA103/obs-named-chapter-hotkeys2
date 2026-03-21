@@ -102,6 +102,7 @@ private:
 	QString getExternalConfigPath();
 	QString getProfilesDir();
 	void refreshProfileCombo();
+	void autoSaveCurrentProfile();
 	
 	QComboBox *profileCombo = nullptr;
 	QPushButton *saveProfileBtn = nullptr;

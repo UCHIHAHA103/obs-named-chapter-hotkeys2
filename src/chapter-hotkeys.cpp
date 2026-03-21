@@ -35,6 +35,7 @@
 #include <QGroupBox>
 #include <QMutexLocker>
 #include <QScrollBar>
+#include <QStyle>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -137,16 +138,18 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		profileCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 		profileLayout->addWidget(profileCombo);
 		
-		saveProfileBtn = new QPushButton("+", this);
-		saveProfileBtn->setToolTip("保存当前配置为方案");
+		saveProfileBtn = new QPushButton(this);
+		saveProfileBtn->setToolTip("新建方案");
 		saveProfileBtn->setFixedSize(28, 28);
-		saveProfileBtn->setStyleSheet("QPushButton { font-size: 18px; font-weight: bold; }");
+		saveProfileBtn->setIcon(style()->standardIcon(QStyle::SP_FileDialogNewFolder));
+		saveProfileBtn->setIconSize(QSize(16, 16));
 		profileLayout->addWidget(saveProfileBtn);
 		
-		deleteProfileBtn = new QPushButton("−", this);
+		deleteProfileBtn = new QPushButton(this);
 		deleteProfileBtn->setToolTip("删除选中方案");
 		deleteProfileBtn->setFixedSize(28, 28);
-		deleteProfileBtn->setStyleSheet("QPushButton { font-size: 18px; font-weight: bold; }");
+		deleteProfileBtn->setIcon(style()->standardIcon(QStyle::SP_TrashIcon));
+		deleteProfileBtn->setIconSize(QSize(16, 16));
 		profileLayout->addWidget(deleteProfileBtn);
 		
 		profileGroup->setLayout(profileLayout);
@@ -181,6 +184,11 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		connect(deleteProfileBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onDeleteProfileClicked);
 		connect(exportBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onExportClicked);
 		connect(importBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onImportClicked);
+		
+		// 标记列表变更时自动保存（覆盖重命名等场景）
+		connect(ui->listWidget, &QListWidget::itemChanged, this, [this](QListWidgetItem *) {
+			autoSaveCurrentProfile();
+		});
 		
 		// 初始化方案下拉框
 		refreshProfileCombo();
@@ -235,13 +243,20 @@ void ChapterHotkeyUI::on_actionAddHotkey_triggered()
 	auto item = new ChapterHotkeyItem(id, name.c_str(), nullptr, "#718637");
 	ui->listWidget->addItem(item);
 	ui->listWidget->sortItems();
+	
+	autoSaveCurrentProfile();
 }
 
 void ChapterHotkeyUI::on_actionRemoveHotkey_triggered()
 {
 	auto item = ui->listWidget->currentItem();
+	if (item) {
+		plog(LOG_INFO, "User action: Remove hotkey '%s'", qPrintable(item->data(Name).toString()));
+	}
 	delete item;
 	ui->listWidget->sortItems();
+	
+	autoSaveCurrentProfile();
 }
 
 void ChapterHotkeyUI::on_actionRenameHotkey_triggered()
@@ -275,6 +290,7 @@ void ChapterHotkeyUI::setSelectedItemColor(const QString &color)
 		}
 		
 		saveToExternalConfig();
+		autoSaveCurrentProfile();
 	}
 }
 
@@ -567,6 +583,9 @@ void ChapterHotkeyUI::loadProfile(const QString &profileName)
 	QJsonObject profileObj = doc.object();
 	QJsonArray markersArray = profileObj["markers"].toArray();
 	
+	// 加载时屏蔽 itemChanged 信号，避免触发不必要的自动保存
+	ui->listWidget->blockSignals(true);
+	
 	// 清空当前列表
 	// 注意：需要先注销所有热键
 	while (ui->listWidget->count() > 0) {
@@ -630,6 +649,10 @@ void ChapterHotkeyUI::loadProfile(const QString &profileName)
 	}
 	
 	ui->listWidget->sortItems();
+	
+	// 恢复信号
+	ui->listWidget->blockSignals(false);
+	
 	currentProfileName = profileName;
 	saveToExternalConfig();
 	
@@ -681,6 +704,17 @@ void ChapterHotkeyUI::refreshProfileCombo()
 	profileCombo->blockSignals(false);
 }
 
+void ChapterHotkeyUI::autoSaveCurrentProfile()
+{
+	// 如果当前没有选中方案，则不自动保存
+	if (currentProfileName.isEmpty()) return;
+	
+	saveCurrentAsProfile(currentProfileName);
+	saveToExternalConfig();
+	plog(LOG_INFO, "Auto-saved to profile: %s (%d markers)",
+		qPrintable(currentProfileName), ui->listWidget->count());
+}
+
 void ChapterHotkeyUI::onProfileComboChanged(int index)
 {
 	if (index <= 0) return; // "-- 选择方案 --"
@@ -695,10 +729,9 @@ void ChapterHotkeyUI::onProfileComboChanged(int index)
 void ChapterHotkeyUI::onSaveProfileClicked()
 {
 	bool ok;
-	QString defaultName = currentProfileName.isEmpty() ? "我的方案" : currentProfileName;
-	QString name = QInputDialog::getText(this, "保存方案",
-		"请输入方案名称：\n\n预设方案示例：\n• 竞品分析方案\n• Bug 测试方案\n• 关卡设计方案\n• 教程录制方案",
-		QLineEdit::Normal, defaultName, &ok);
+	QString name = QInputDialog::getText(this, "新建方案",
+		"请输入新方案名称：",
+		QLineEdit::Normal, "", &ok);
 	
 	if (!ok || name.trimmed().isEmpty()) return;
 	name = name.trimmed();
@@ -712,11 +745,19 @@ void ChapterHotkeyUI::onSaveProfileClicked()
 		if (ret != QMessageBox::Yes) return;
 	}
 	
+	// 清空当前标记列表（新建空白方案）
+	ui->listWidget->blockSignals(true);
+	while (ui->listWidget->count() > 0) {
+		delete ui->listWidget->takeItem(0);
+	}
+	ui->listWidget->blockSignals(false);
+	
+	// 保存为空白方案
+	currentProfileName = name;
 	saveCurrentAsProfile(name);
 	refreshProfileCombo();
 	
-	QMessageBox::information(this, "保存成功",
-		QString("方案「%1」已保存，包含 %2 个标记。").arg(name).arg(ui->listWidget->count()));
+	plog(LOG_INFO, "New empty profile created: %s", qPrintable(name));
 }
 
 void ChapterHotkeyUI::onDeleteProfileClicked()
