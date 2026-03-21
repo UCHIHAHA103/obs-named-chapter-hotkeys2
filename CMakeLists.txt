@@ -36,7 +36,7 @@ if(ENABLE_QT)
 endif()
 
 # C
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/plugin-main.c)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/plugin-main.c src/plugin-logger.c src/plugin-logger.h)
 # C++/UI
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/chapter-hotkeys.cpp src/chapter-hotkeys.hpp)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/forms/chapter-hotkeys.ui)

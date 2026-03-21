@@ -18,6 +18,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <obs-module.h>
 #include <plugin-support.h>
+#include "plugin-logger.h"
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
@@ -26,13 +27,21 @@ void InitChapterHotkeys(void);
 
 bool obs_module_load(void)
 {
+	/* 先初始化日志系统，让后续所有操作都能被记录 */
+	plugin_logger_init();
+	
+	plog(LOG_INFO, "Plugin loading... (version %s)", PLUGIN_VERSION);
+	
 	InitChapterHotkeys();
-	obs_log(LOG_INFO, "plugin loaded successfully (version %s)",
-		PLUGIN_VERSION);
+	
+	plog(LOG_INFO, "Plugin loaded successfully (version %s)", PLUGIN_VERSION);
 	return true;
 }
 
 void obs_module_unload(void)
 {
-	obs_log(LOG_INFO, "plugin unloaded");
+	plog(LOG_INFO, "Plugin unloading...");
+	
+	/* 关闭日志系统（最后执行） */
+	plugin_logger_shutdown();
 }

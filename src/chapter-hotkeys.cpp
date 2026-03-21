@@ -1,4 +1,5 @@
 #include "chapter-hotkeys.hpp"
+#include "plugin-logger.h"
 
 #include <QCoreApplication>
 #include <QAction>
@@ -184,6 +185,8 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		// 初始化方案下拉框
 		refreshProfileCombo();
 	}
+	
+	plog(LOG_INFO, "ChapterHotkeyUI initialized, window size: %dx%d", width(), height());
 }
 
 void ChapterHotkeyUI::ShowHideDialog()
@@ -287,11 +290,11 @@ QString ChapterHotkeyUI::getExternalConfigPath()
 	// 如果目录不存在则创建
 	if (!cepDataDir.exists()) {
 		bool created = cepDataDir.mkpath(".");
-		blog(LOG_INFO, "Creating CEP config directory: %s, success: %d", qPrintable(cepDataDir.path()), created);
+		plog(LOG_INFO, "Creating CEP config directory: %s, success: %d", qPrintable(cepDataDir.path()), created);
 	}
 	
 	QString configPath = cepDataDir.filePath("chapter-markers-config.json");
-	blog(LOG_INFO, "External config path: %s", qPrintable(configPath));
+	plog(LOG_INFO, "External config path: %s", qPrintable(configPath));
 	return configPath;
 }
 
@@ -378,9 +381,9 @@ void ChapterHotkeyUI::saveToExternalConfig()
 	if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
 		configFile.write(doc.toJson(QJsonDocument::Indented));
 		configFile.close();
-		blog(LOG_INFO, "External config saved successfully to: %s", qPrintable(configFile.fileName()));
+		plog(LOG_INFO, "External config saved successfully to: %s", qPrintable(configFile.fileName()));
 	} else {
-		blog(LOG_ERROR, "Failed to open config file for writing: %s", qPrintable(configFile.fileName()));
+		plog(LOG_ERROR, "Failed to open config file for writing: %s", qPrintable(configFile.fileName()));
 	}
 }
 
@@ -542,7 +545,7 @@ void ChapterHotkeyUI::saveCurrentAsProfile(const QString &profileName, const QSt
 		file.write(doc.toJson(QJsonDocument::Indented));
 		file.close();
 		currentProfileName = profileName;
-		blog(LOG_INFO, "Profile saved: %s", qPrintable(profileName));
+		plog(LOG_INFO, "Profile saved: %s", qPrintable(profileName));
 	}
 }
 
@@ -551,7 +554,7 @@ void ChapterHotkeyUI::loadProfile(const QString &profileName)
 	QString filePath = getProfilesDir() + "/" + profileName + ".json";
 	QFile file(filePath);
 	if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-		blog(LOG_WARNING, "Cannot open profile: %s", qPrintable(profileName));
+		plog(LOG_WARNING, "Cannot open profile: %s", qPrintable(profileName));
 		return;
 	}
 	
@@ -630,7 +633,7 @@ void ChapterHotkeyUI::loadProfile(const QString &profileName)
 	currentProfileName = profileName;
 	saveToExternalConfig();
 	
-	blog(LOG_INFO, "Profile loaded: %s", qPrintable(profileName));
+	plog(LOG_INFO, "Profile loaded: %s with %d markers", qPrintable(profileName), ui->listWidget->count());
 }
 
 void ChapterHotkeyUI::deleteProfile(const QString &profileName)
@@ -640,7 +643,7 @@ void ChapterHotkeyUI::deleteProfile(const QString &profileName)
 	if (currentProfileName == profileName) {
 		currentProfileName.clear();
 	}
-	blog(LOG_INFO, "Profile deleted: %s", qPrintable(profileName));
+	plog(LOG_INFO, "Profile deleted: %s", qPrintable(profileName));
 }
 
 QStringList ChapterHotkeyUI::getProfileNames()
@@ -794,7 +797,7 @@ void ChapterHotkeyUI::exportConfig(const QString &filePath)
 	if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
 		file.write(doc.toJson(QJsonDocument::Indented));
 		file.close();
-		blog(LOG_INFO, "Config exported to: %s", qPrintable(filePath));
+		plog(LOG_INFO, "Config exported to: %s", qPrintable(filePath));
 	}
 }
 
@@ -1092,12 +1095,12 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 		// 【改进】使用原子标志进行严格的重入保护
 		// 如果注释窗口已打开或正在创建中，直接忽略
 		if (ChapterWithCommentDialog::IsDialogOpen()) {
-			blog(LOG_INFO, "Hotkey ignored: comment dialog is already open");
+			plog(LOG_INFO, "Hotkey ignored: comment dialog is already open");
 			return;
 		}
 		
 		if (g_showDialogPending.exchange(true)) {
-			blog(LOG_INFO, "Hotkey ignored: dialog creation already pending");
+			plog(LOG_INFO, "Hotkey ignored: dialog creation already pending");
 			return;
 		}
 		
@@ -1113,6 +1116,7 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 				chapterName = "(" + colorName.toStdString() + ") " + chapterName;
 			}
 			obs_frontend_recording_add_chapter(chapterName.c_str());
+			plog(LOG_INFO, "Chapter marker added (no comment): '%s'", chapterName.c_str());
 			
 			// 通知实时预览面板
 			if (g_livePanel) {
@@ -1138,6 +1142,7 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 			initialChapterName = "(" + colorName.toStdString() + ") " + initialChapterName;
 		}
 		obs_frontend_recording_add_chapter(initialChapterName.c_str());
+		plog(LOG_INFO, "Initial comment marker added: '%s', opening comment dialog...", initialChapterName.c_str());
 		
 		// 【改进】使用 QMetaObject::invokeMethod 安全地在 UI 线程中打开对话框
 		QMetaObject::invokeMethod(QCoreApplication::instance(), []() {
@@ -1151,10 +1156,11 @@ static void ShowCommentDialog()
 {
 	// 二次检查：确保不会重复打开
 	if (ChapterWithCommentDialog::IsDialogOpen()) {
-		blog(LOG_WARNING, "ShowCommentDialog: dialog already open, aborting");
+		plog(LOG_WARNING, "ShowCommentDialog: dialog already open, aborting");
 		return;
 	}
 	
+	plog(LOG_INFO, "ShowCommentDialog: opening for marker '%s'", qPrintable(g_pendingChapterName));
 	string nameInput = g_pendingChapterName.toStdString();
 	string commentInput;
 	QString selectedColor = g_pendingColorHex; // 默认使用触发时的颜色
@@ -1184,6 +1190,7 @@ static void ShowCommentDialog()
 			finalChapterName = "(" + colorName.toStdString() + ") " + finalChapterName;
 		}
 		obs_frontend_recording_add_chapter(finalChapterName.c_str());
+		plog(LOG_INFO, "Comment dialog accepted: marker='%s', comment='%s'", nameInput.c_str(), commentInput.c_str());
 		
 		// 通知实时预览面板
 		if (g_livePanel) {
@@ -1198,6 +1205,7 @@ static void ShowCommentDialog()
 		}
 	} else {
 		// 用户取消：创建标记 A2@###，表示这组标记需要被删除
+		plog(LOG_INFO, "Comment dialog cancelled for marker '%s'", nameInput.c_str());
 		string cancelChapterName = nameInput + "@###";
 		if (!selectedColor.isEmpty() && selectedColor != "none") {
 			QString colorName = getColorName(selectedColor);
@@ -1478,7 +1486,7 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 	
 	// 再次检查标志（双重检查锁定）
 	if (s_isDialogOpen.load()) {
-		blog(LOG_WARNING, "AskForNameAndComment: dialog already open");
+		plog(LOG_WARNING, "AskForNameAndComment: dialog already open");
 		return false;
 	}
 	
@@ -1729,6 +1737,7 @@ void MarkerLivePanel::onRecordingStopped()
 	recordingTimer->stop();
 	statusLabel->setText("⏹ 录制已停止");
 	statusLabel->setStyleSheet("font-weight: bold; color: #999;");
+	plog(LOG_INFO, "Recording stopped, total markers: %d", markers.size());
 }
 
 void MarkerLivePanel::updateRecordingTime()
@@ -1784,7 +1793,7 @@ void MarkerLivePanel::addMarker(const QString &name, const QString &color, const
 	markerList->addItem(item);
 	markerList->scrollToBottom();
 	
-	blog(LOG_INFO, "Live panel: marker #%d added - %s at %s",
+	plog(LOG_INFO, "Live panel: marker #%d added - %s at %s",
 		entry.index, qPrintable(name), qPrintable(entry.timeCode));
 }
 
@@ -1838,23 +1847,29 @@ void MarkerLivePanel::copyMarkersToClipboard()
 static void LoadSaveHotkeys(obs_data_t *save_data, bool saving, void *)
 {
 	if (saving) {
+		plog(LOG_INFO, "Saving hotkeys to OBS data...");
 		OBSDataAutoRelease obj = obs_data_create();
 		hk_edit->SaveHotkeys(obj);
 		obs_data_set_obj(save_data, "chapter_hotkeys", obj);
 		obs_data_set_bool(save_data, "enable_comments", g_enableComments);
+		plog(LOG_INFO, "Hotkeys saved, enableComments=%d", g_enableComments);
 	} else {
+		plog(LOG_INFO, "Loading hotkeys from OBS data...");
 		OBSDataAutoRelease obj =
 			obs_data_get_obj(save_data, "chapter_hotkeys");
 		if (obj) {
 			hk_edit->LoadHotkeys(obj);
+			plog(LOG_INFO, "Hotkeys loaded from OBS internal config");
 		} else {
 			// 如果OBS内部配置不存在，尝试从外部配置文件加载
+			plog(LOG_INFO, "OBS internal config not found, loading from external config file");
 			hk_edit->loadFromExternalConfig();
 		}
 		g_enableComments = obs_data_get_bool(save_data, "enable_comments");
 		if (hk_edit->enableCommentsCheckBox) {
 			hk_edit->enableCommentsCheckBox->setChecked(g_enableComments);
 		}
+		plog(LOG_INFO, "Hotkeys load complete, enableComments=%d", g_enableComments);
 	}
 }
 
