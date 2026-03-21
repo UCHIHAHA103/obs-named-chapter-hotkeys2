@@ -142,16 +142,23 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		saveProfileBtn = new QPushButton(this);
 		saveProfileBtn->setToolTip("新建方案");
 		saveProfileBtn->setFixedSize(28, 28);
-		saveProfileBtn->setIcon(style()->standardIcon(QStyle::SP_FileDialogNewFolder));
+		saveProfileBtn->setIcon(QIcon(":/res/images/plus.svg"));
 		saveProfileBtn->setIconSize(QSize(16, 16));
 		profileLayout->addWidget(saveProfileBtn);
 		
 		deleteProfileBtn = new QPushButton(this);
 		deleteProfileBtn->setToolTip("删除选中方案");
 		deleteProfileBtn->setFixedSize(28, 28);
-		deleteProfileBtn->setIcon(style()->standardIcon(QStyle::SP_TrashIcon));
+		deleteProfileBtn->setIcon(QIcon(":/res/images/minus.svg"));
 		deleteProfileBtn->setIconSize(QSize(16, 16));
 		profileLayout->addWidget(deleteProfileBtn);
+		
+		renameProfileBtn = new QPushButton(this);
+		renameProfileBtn->setToolTip("重命名方案");
+		renameProfileBtn->setFixedSize(28, 28);
+		renameProfileBtn->setIcon(QIcon(":/res/images/cogs.svg"));
+		renameProfileBtn->setIconSize(QSize(16, 16));
+		profileLayout->addWidget(renameProfileBtn);
 		
 		profileGroup->setLayout(profileLayout);
 		mainLayout->insertWidget(0, profileGroup);
@@ -183,6 +190,7 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 			this, &ChapterHotkeyUI::onProfileComboChanged);
 		connect(saveProfileBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onSaveProfileClicked);
 		connect(deleteProfileBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onDeleteProfileClicked);
+		connect(renameProfileBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onRenameProfileClicked);
 		connect(exportBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onExportClicked);
 		connect(importBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onImportClicked);
 		
@@ -823,6 +831,64 @@ void ChapterHotkeyUI::onDeleteProfileClicked()
 	}
 }
 
+void ChapterHotkeyUI::onRenameProfileClicked()
+{
+	if (profileCombo->currentIndex() <= 0) {
+		QMessageBox::warning(this, "提示", "请先选择要重命名的方案。");
+		return;
+	}
+	
+	QString oldName = profileCombo->currentText();
+	
+	bool ok;
+	QString newName = QInputDialog::getText(this, "重命名方案",
+		QString("将方案「%1」重命名为：").arg(oldName),
+		QLineEdit::Normal, oldName, &ok);
+	
+	if (!ok || newName.trimmed().isEmpty()) return;
+	newName = newName.trimmed();
+	
+	if (newName == oldName) return;
+	
+	// 检查新名称是否已存在
+	QStringList existing = getProfileNames();
+	if (existing.contains(newName)) {
+		QMessageBox::warning(this, "重命名失败",
+			QString("方案「%1」已存在，请选择其他名称。").arg(newName));
+		return;
+	}
+	
+	// 重命名文件
+	QString oldPath = getProfilesDir() + "/" + oldName + ".json";
+	QString newPath = getProfilesDir() + "/" + newName + ".json";
+	
+	if (QFile::rename(oldPath, newPath)) {
+		// 更新方案文件内部的名称字段
+		QFile file(newPath);
+		if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+			QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+			file.close();
+			if (doc.isObject()) {
+				QJsonObject obj = doc.object();
+				obj["name"] = newName;
+				if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+					file.write(QJsonDocument(obj).toJson(QJsonDocument::Indented));
+					file.close();
+				}
+			}
+		}
+		
+		if (currentProfileName == oldName) {
+			currentProfileName = newName;
+		}
+		refreshProfileCombo();
+		saveToExternalConfig();
+		plog(LOG_INFO, "Profile renamed: %s -> %s", qUtf8Printable(oldName), qUtf8Printable(newName));
+	} else {
+		QMessageBox::warning(this, "重命名失败", "文件重命名失败，请检查文件权限。");
+	}
+}
+
 // ============================================================================
 // 导入/导出功能
 // ============================================================================
@@ -1172,7 +1238,13 @@ ChapterHotkeyItem::~ChapterHotkeyItem()
 
 void ChapterHotkeyItem::updateDisplayText()
 {
-	setText(QString::fromStdString(chapterName));
+	QString hotkeyText = getHotkeyText();
+	if (hotkeyText.isEmpty() || hotkeyText == "None") {
+		setText(QString::fromStdString(chapterName));
+	} else {
+		// 名称后面用空格和快捷键文本，格式如 "bug        [NUM1]"
+		setText(QString::fromStdString(chapterName) + "    [" + hotkeyText + "]");
+	}
 	
 	if (!color.isEmpty() && color != "none") {
 		QColor circleColor = getColorFromHex(color);
@@ -1190,7 +1262,7 @@ void ChapterHotkeyItem::updateDisplayText()
 		setIcon(QIcon());
 	}
 	
-	setToolTip(QString("Hotkey: %1").arg(getHotkeyText()));
+	setToolTip(QString("Hotkey: %1").arg(hotkeyText));
 }
 
 QString ChapterHotkeyItem::getHotkeyText() const
@@ -1204,23 +1276,41 @@ QString ChapterHotkeyItem::getHotkeyText() const
 		return "None";
 	}
 	
-	QStringList keys;
+	QStringList results;
 	for (size_t i = 0; i < count; i++) {
 		obs_data_t *binding = obs_data_array_item(bindings, i);
-		obs_data_t *key = obs_data_get_obj(binding, "key");
-		if (key) {
-			const char *keyText = obs_data_get_string(key, "text");
-			if (keyText && strlen(keyText) > 0) {
-				keys.append(QString::fromUtf8(keyText));
+		if (!binding) continue;
+		
+		const char *key = obs_data_get_string(binding, "key");
+		bool shift = obs_data_get_bool(binding, "shift");
+		bool control = obs_data_get_bool(binding, "control");
+		bool alt = obs_data_get_bool(binding, "alt");
+		bool command = obs_data_get_bool(binding, "command");
+		
+		QStringList parts;
+		if (control) parts << "Ctrl";
+		if (shift) parts << "Shift";
+		if (alt) parts << "Alt";
+		if (command) parts << "Cmd";
+		if (key && *key) {
+			QString keyStr = QString(key).toUpper();
+			if (keyStr.startsWith("OBS_KEY_NUMPAD")) {
+				keyStr = "NUM" + keyStr.mid(14);
+			} else if (keyStr.startsWith("OBS_KEY_")) {
+				keyStr = keyStr.mid(8);
 			}
-			obs_data_release(key);
+			parts << keyStr;
+		}
+		
+		if (!parts.isEmpty()) {
+			results.append(parts.join("+"));
 		}
 		obs_data_release(binding);
 	}
 	obs_data_array_release(bindings);
 	
-	if (keys.isEmpty()) return "None";
-	return keys.join(" + ");
+	if (results.isEmpty()) return "None";
+	return results.join(", ");
 }
 
 static QString g_pendingChapterName;

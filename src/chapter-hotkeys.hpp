@@ -95,6 +95,7 @@ private slots:
 	void onProfileComboChanged(int index);
 	void onSaveProfileClicked();
 	void onDeleteProfileClicked();
+	void onRenameProfileClicked();
 
 private:
 	void setSelectedItemColor(const QString &color);
@@ -107,6 +108,7 @@ private:
 	QComboBox *profileCombo = nullptr;
 	QPushButton *saveProfileBtn = nullptr;
 	QPushButton *deleteProfileBtn = nullptr;
+	QPushButton *renameProfileBtn = nullptr;
 	QPushButton *exportBtn = nullptr;
 	QPushButton *importBtn = nullptr;
 	QString currentProfileName;
