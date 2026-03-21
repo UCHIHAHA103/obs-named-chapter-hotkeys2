@@ -18,6 +18,8 @@
 #include <QVariant>
 #include <QComboBox>
 #include <QPushButton>
+#include <QStyledItemDelegate>
+#include <QPainter>
 #include <QDockWidget>
 #include <QListWidget>
 #include <QJsonArray>
@@ -63,6 +65,9 @@ public:
 
 	static QStringList GetAllChapterNames();
 	
+	// 恢复上次的方案选择状态（从外部配置文件读取）
+	void restoreProfileSelection();
+	
 	// 配置方案管理
 	void saveCurrentAsProfile(const QString &profileName, const QString &description = "");
 	void loadProfile(const QString &profileName);
@@ -96,6 +101,7 @@ private slots:
 	void onSaveProfileClicked();
 	void onDeleteProfileClicked();
 	void onRenameProfileClicked();
+	void onRefreshHotkeysClicked();
 
 private:
 	void setSelectedItemColor(const QString &color);
@@ -104,17 +110,32 @@ private:
 	QString getProfilesDir();
 	void refreshProfileCombo();
 	void autoSaveCurrentProfile();
+	void refreshAllHotkeyDisplays();
 	
 	QComboBox *profileCombo = nullptr;
 	QPushButton *saveProfileBtn = nullptr;
 	QPushButton *deleteProfileBtn = nullptr;
 	QPushButton *renameProfileBtn = nullptr;
+	QPushButton *refreshHotkeysBtn = nullptr;
 	QPushButton *exportBtn = nullptr;
 	QPushButton *importBtn = nullptr;
 	QString currentProfileName;
 };
 
-enum HotkeyDataRoles { Name = Qt::UserRole, HotkeyId, Bindings, Color };
+// ============================================================================
+// 自定义列表项绘制代理 - 标记名称左对齐，快捷键右对齐灰色显示
+// ============================================================================
+class HotkeyItemDelegate : public QStyledItemDelegate {
+	Q_OBJECT
+public:
+	using QStyledItemDelegate::QStyledItemDelegate;
+	void paint(QPainter *painter, const QStyleOptionViewItem &option,
+		   const QModelIndex &index) const override;
+	QSize sizeHint(const QStyleOptionViewItem &option,
+		       const QModelIndex &index) const override;
+};
+
+enum HotkeyDataRoles { Name = Qt::UserRole, HotkeyId, Bindings, Color, HotkeyText };
 
 // ============================================================================
 // 快捷键列表项

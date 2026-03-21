@@ -160,6 +160,13 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		renameProfileBtn->setIconSize(QSize(16, 16));
 		profileLayout->addWidget(renameProfileBtn);
 		
+		refreshHotkeysBtn = new QPushButton(this);
+		refreshHotkeysBtn->setToolTip("刷新快捷键显示");
+		refreshHotkeysBtn->setFixedSize(28, 28);
+		refreshHotkeysBtn->setIcon(QIcon(":/res/images/revert.svg"));
+		refreshHotkeysBtn->setIconSize(QSize(16, 16));
+		profileLayout->addWidget(refreshHotkeysBtn);
+		
 		profileGroup->setLayout(profileLayout);
 		mainLayout->insertWidget(0, profileGroup);
 		
@@ -191,6 +198,7 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		connect(saveProfileBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onSaveProfileClicked);
 		connect(deleteProfileBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onDeleteProfileClicked);
 		connect(renameProfileBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onRenameProfileClicked);
+		connect(refreshHotkeysBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onRefreshHotkeysClicked);
 		connect(exportBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onExportClicked);
 		connect(importBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::onImportClicked);
 		
@@ -198,6 +206,9 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		connect(ui->listWidget, &QListWidget::itemChanged, this, [this](QListWidgetItem *) {
 			autoSaveCurrentProfile();
 		});
+		
+		// 设置自定义绘制代理：标记名称左对齐、快捷键右对齐灰色显示
+		ui->listWidget->setItemDelegate(new HotkeyItemDelegate(ui->listWidget));
 		
 		// 初始化方案下拉框
 		refreshProfileCombo();
@@ -757,6 +768,25 @@ void ChapterHotkeyUI::refreshProfileCombo()
 	profileCombo->blockSignals(false);
 }
 
+void ChapterHotkeyUI::restoreProfileSelection()
+{
+	// 从外部配置文件读取上次选择的方案名
+	QFile configFile(getExternalConfigPath());
+	if (configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+		QJsonDocument cfgDoc = QJsonDocument::fromJson(configFile.readAll());
+		configFile.close();
+		if (cfgDoc.isObject()) {
+			QJsonObject cfgObj = cfgDoc.object();
+			if (cfgObj.contains("profile")) {
+				currentProfileName = cfgObj["profile"].toString();
+				plog(LOG_INFO, "Restored last profile selection: %s",
+					qUtf8Printable(currentProfileName));
+			}
+		}
+	}
+	refreshProfileCombo();
+}
+
 void ChapterHotkeyUI::autoSaveCurrentProfile()
 {
 	// 如果当前没有选中方案，则不自动保存
@@ -887,6 +917,112 @@ void ChapterHotkeyUI::onRenameProfileClicked()
 	} else {
 		QMessageBox::warning(this, "重命名失败", "文件重命名失败，请检查文件权限。");
 	}
+}
+
+// ============================================================================
+// 刷新快捷键按钮：重新从 OBS 获取所有热键的绑定信息并刷新显示
+// ============================================================================
+void ChapterHotkeyUI::onRefreshHotkeysClicked()
+{
+	refreshAllHotkeyDisplays();
+	plog(LOG_INFO, "Hotkey displays refreshed manually");
+}
+
+void ChapterHotkeyUI::refreshAllHotkeyDisplays()
+{
+	for (int i = 0; i < ui->listWidget->count(); i++) {
+		auto *item = dynamic_cast<ChapterHotkeyItem *>(ui->listWidget->item(i));
+		if (!item) continue;
+		
+		// 重新从 OBS 获取当前热键的绑定数据
+		obs_hotkey_id hkId = item->getHotkey();
+		if (hkId != OBS_INVALID_HOTKEY_ID) {
+			OBSDataArrayAutoRelease newBindings = obs_hotkey_save(hkId);
+			if (newBindings) {
+				item->setData(Bindings, QVariant::fromValue(static_cast<void *>(obs_data_array_ref(newBindings))));
+			}
+		}
+		
+		// 刷新显示文本（包括快捷键）
+		item->updateDisplayText();
+	}
+	
+	// 同步保存到当前方案和外部配置
+	autoSaveCurrentProfile();
+	saveToExternalConfig();
+}
+
+// ============================================================================
+// HotkeyItemDelegate - 标记名称左对齐，快捷键右对齐灰色显示
+// ============================================================================
+void HotkeyItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
+			       const QModelIndex &index) const
+{
+	// 先让默认绘制处理背景、选中高亮、图标等
+	QStyleOptionViewItem opt = option;
+	initStyleOption(&opt, index);
+	
+	// 获取快捷键文本
+	QString hotkeyText = index.data(HotkeyText).toString();
+	
+	painter->save();
+	
+	// 绘制背景（选中/hover等状态）
+	QStyle *style = opt.widget ? opt.widget->style() : QApplication::style();
+	
+	// 清空文本，让 style 只画背景和图标
+	QString originalText = opt.text;
+	opt.text = QString();
+	style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, opt.widget);
+	
+	// 计算文本区域（排除图标和装饰区域）
+	QRect textRect = style->subElementRect(QStyle::SE_ItemViewItemText, &opt, opt.widget);
+	int padding = 4;
+	textRect.adjust(padding, 0, -padding, 0);
+	
+	// 设置文本颜色
+	QPalette::ColorGroup cg = (opt.state & QStyle::State_Enabled) 
+		? QPalette::Normal : QPalette::Disabled;
+	if (opt.state & QStyle::State_Selected) {
+		painter->setPen(opt.palette.color(cg, QPalette::HighlightedText));
+	} else {
+		painter->setPen(opt.palette.color(cg, QPalette::Text));
+	}
+	
+	// 绘制标记名称（左对齐）
+	painter->setFont(opt.font);
+	painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, originalText);
+	
+	// 绘制快捷键（右对齐，灰色，稍小字体）
+	if (!hotkeyText.isEmpty()) {
+		QString displayHotkey = "[" + hotkeyText + "]";
+		
+		QFont hotkeyFont = opt.font;
+		hotkeyFont.setPointSizeF(hotkeyFont.pointSizeF() * 0.85);
+		painter->setFont(hotkeyFont);
+		
+		if (opt.state & QStyle::State_Selected) {
+			QColor c = opt.palette.color(cg, QPalette::HighlightedText);
+			c.setAlpha(180);
+			painter->setPen(c);
+		} else {
+			painter->setPen(QColor(140, 140, 140));
+		}
+		
+		painter->drawText(textRect, Qt::AlignRight | Qt::AlignVCenter, displayHotkey);
+	}
+	
+	painter->restore();
+}
+
+QSize HotkeyItemDelegate::sizeHint(const QStyleOptionViewItem &option,
+				    const QModelIndex &index) const
+{
+	QSize size = QStyledItemDelegate::sizeHint(option, index);
+	// 确保行高足够
+	if (size.height() < 24)
+		size.setHeight(24);
+	return size;
 }
 
 // ============================================================================
@@ -1239,11 +1375,15 @@ ChapterHotkeyItem::~ChapterHotkeyItem()
 void ChapterHotkeyItem::updateDisplayText()
 {
 	QString hotkeyText = getHotkeyText();
+	
+	// 名称只设置标记名
+	setText(QString::fromStdString(chapterName));
+	
+	// 快捷键文本存储到自定义角色，供 HotkeyItemDelegate 绘制（右对齐）
 	if (hotkeyText.isEmpty() || hotkeyText == "None") {
-		setText(QString::fromStdString(chapterName));
+		QListWidgetItem::setData(HotkeyText, QString());
 	} else {
-		// 名称后面用空格和快捷键文本，格式如 "bug        [NUM1]"
-		setText(QString::fromStdString(chapterName) + "    [" + hotkeyText + "]");
+		QListWidgetItem::setData(HotkeyText, hotkeyText);
 	}
 	
 	if (!color.isEmpty() && color != "none") {
@@ -2100,6 +2240,8 @@ static void LoadSaveHotkeys(obs_data_t *save_data, bool saving, void *)
 		if (obj) {
 			hk_edit->LoadHotkeys(obj);
 			plog(LOG_INFO, "Hotkeys loaded from OBS internal config");
+			// 从外部配置文件恢复方案选择状态
+			hk_edit->restoreProfileSelection();
 		} else {
 			// 如果OBS内部配置不存在，尝试从外部配置文件加载
 			plog(LOG_INFO, "OBS internal config not found, loading from external config file");
