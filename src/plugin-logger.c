@@ -58,32 +58,25 @@ static void get_timestamp(char *buf, size_t buf_size)
 	strftime(buf, buf_size, "%Y-%m-%d %H:%M:%S", &tm_info);
 }
 
-/* 获取当前日期字符串: YYYY-MM-DD */
-static void get_date(char *buf, size_t buf_size)
-{
-	time_t now = time(NULL);
-	struct tm tm_info;
-#ifdef _WIN32
-	localtime_s(&tm_info, &now);
-#else
-	localtime_r(&now, &tm_info);
-#endif
-	strftime(buf, buf_size, "%Y-%m-%d", &tm_info);
-}
 
 void plugin_logger_init(void)
 {
 	if (g_logger_initialized)
 		return;
 
-	/* 以 UTF-8 追加模式打开日志文件 */
+	/*
+	 * 重要：使用二进制追加模式 "ab" 而非 "a, ccs=UTF-8"
+	 * 原因：ccs=UTF-8 模式会将文件流设为宽字符模式，
+	 *       此时必须用 fwprintf 而非 fprintf，否则会导致未定义行为/崩溃。
+	 *       我们的字符串本身就是 UTF-8 编码，直接用 fprintf 二进制写入即可。
+	 */
 #ifdef _WIN32
-	/* Windows: 使用宽字符打开以支持中文路径 */
+	/* Windows: 使用宽字符路径打开以支持中文路径 */
 	wchar_t wpath[1024];
 	MultiByteToWideChar(CP_UTF8, 0, LOG_FILE_PATH, -1, wpath, 1024);
-	g_log_file = _wfopen(wpath, L"a, ccs=UTF-8");
+	g_log_file = _wfopen(wpath, L"ab");
 #else
-	g_log_file = fopen(LOG_FILE_PATH, "a");
+	g_log_file = fopen(LOG_FILE_PATH, "ab");
 #endif
 
 	g_logger_initialized = 1;
@@ -95,15 +88,22 @@ void plugin_logger_init(void)
 		return;
 	}
 
+	/* 写入 UTF-8 BOM（仅当文件为空时） */
+	fseek(g_log_file, 0, SEEK_END);
+	long file_size = ftell(g_log_file);
+	if (file_size == 0) {
+		/* 写入 UTF-8 BOM: EF BB BF */
+		unsigned char bom[3] = {0xEF, 0xBB, 0xBF};
+		fwrite(bom, 1, 3, g_log_file);
+	}
+
 	/* 写入启动分隔线 */
-	char date_buf[32];
 	char time_buf[32];
-	get_date(date_buf, sizeof(date_buf));
 	get_timestamp(time_buf, sizeof(time_buf));
 
 	fprintf(g_log_file,
 		"\n---\n\n"
-		"## 🚀 插件启动 - %s\n\n"
+		"## 插件启动 - %s\n\n"
 		"| 时间 | 级别 | 消息 |\n"
 		"|------|------|------|\n",
 		time_buf);
@@ -121,7 +121,7 @@ void plugin_logger_shutdown(void)
 		char time_buf[32];
 		get_timestamp(time_buf, sizeof(time_buf));
 		fprintf(g_log_file,
-			"| %s | INFO  | 🛑 插件已卸载 |\n\n",
+			"| %s | INFO  | [STOP] 插件已卸载 |\n\n",
 			time_buf);
 		fflush(g_log_file);
 		fclose(g_log_file);
