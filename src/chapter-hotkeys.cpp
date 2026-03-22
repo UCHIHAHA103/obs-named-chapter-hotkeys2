@@ -454,19 +454,40 @@ void ChapterHotkeyUI::ensureDefaultPreset()
 	QStringList existing = getProfileNames();
 	if (!existing.isEmpty()) return;
 	
-	// profiles 为空，创建默认"预设"
+	// profiles 为空，创建包含常见标记点的默认"预设"
+	QJsonArray markersArray;
+	
+	// 标记点定义：名称、颜色（不设置快捷键）
+	struct DefaultMarker { const char *name; const char *color; };
+	DefaultMarker defaults[] = {
+		{"bug",        "#D22C36"},
+		{"\xe5\x8f\x8d\xe9\xa6\x88",      "#718637"},   // 反馈
+		{"\xe5\x9b\x9e\xe6\x94\xbe",      "#D0A12B"},   // 回放
+		{"\xe8\xae\xb0\xe5\xbf\x86\xe6\x80\xa7\xe7\x94\xbb\xe9\x9d\xa2", "#428DFC"},   // 记忆性画面
+		{"\xe4\xbc\x98\xe7\xa7\x80\xe6\xbc\x94\xe5\x87\xba", "#19F4D6"},   // 优秀演出
+	};
+	
+	for (const auto &def : defaults) {
+		QJsonObject m;
+		m["name"] = QString::fromUtf8(def.name);
+		m["color"] = QString::fromUtf8(def.color);
+		m["uuid"] = QString("chapter_hotkey_%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+		m["hotkey"] = "";
+		markersArray.append(m);
+	}
+	
 	QJsonObject presetObj;
 	presetObj["name"] = QString::fromUtf8("预设");
 	presetObj["version"] = "3.0";
-	presetObj["enableComments"] = false;
+	presetObj["enableComments"] = true;
 	presetObj["createdAt"] = QDateTime::currentDateTime().toString(Qt::ISODate);
-	presetObj["markers"] = QJsonArray();
+	presetObj["markers"] = markersArray;
 	
 	QFile file(presetPath);
 	if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
 		file.write(QJsonDocument(presetObj).toJson(QJsonDocument::Indented));
 		file.close();
-		plog(LOG_INFO, "Created default preset: profiles/预设.json");
+		plog(LOG_INFO, "Created default preset with 5 markers: profiles/预设.json");
 	}
 }
 
