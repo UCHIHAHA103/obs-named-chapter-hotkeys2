@@ -745,6 +745,13 @@ void ChapterHotkeyUI::loadProfile(const QString &profileName)
 	
 	currentProfileName = profileName;
 	
+	// 立即更新 _active.txt，确保 PR 插件刷新时能读到最新的激活方案
+	QFile activeFile(getProfilesDir() + "/_active.txt");
+	if (activeFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+		activeFile.write(profileName.toUtf8());
+		activeFile.close();
+	}
+	
 	plog(LOG_INFO, "Profile loaded: %s with %d markers", qUtf8Printable(profileName), ui->listWidget->count());
 }
 
