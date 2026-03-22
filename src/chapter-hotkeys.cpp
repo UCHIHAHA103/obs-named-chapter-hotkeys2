@@ -30,6 +30,7 @@
 #include <QTimer>
 #include <QTextEdit>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QInputDialog>
 #include <QClipboard>
 #include <QApplication>
@@ -1184,32 +1185,66 @@ void ChapterHotkeyUI::importConfig(const QString &filePath)
 		return;
 	}
 	
-	// 询问是替换还是合并
-	auto ret = QMessageBox::question(this, "导入配置",
-		QString("检测到 %1 个标记。\n\n"
-			"点击「Yes」替换当前所有标记\n"
-			"点击「No」合并到当前标记列表").arg(markersArray.size()),
-		QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+	// 确定导入方案的名称：优先 "name" 字段，回退 "profile" 字段，再回退文件名
+	QString importName;
+	if (importObj.contains("name") && !importObj["name"].toString().isEmpty()) {
+		importName = importObj["name"].toString();
+	} else if (importObj.contains("profile") && !importObj["profile"].toString().isEmpty()) {
+		importName = importObj["profile"].toString();
+	} else {
+		// 从文件名提取（去掉扩展名）
+		importName = QFileInfo(filePath).baseName();
+	}
 	
-	if (ret == QMessageBox::Cancel) return;
+	// 检查是否与现有方案同名
+	QStringList existingProfiles = getProfileNames();
+	bool hasConflict = existingProfiles.contains(importName);
 	
-	bool replace = (ret == QMessageBox::Yes);
+	QString targetProfileName = importName;
+	
+	if (hasConflict) {
+		// ===== 情况 A：同名冲突，弹出二次确认 =====
+		// 生成不冲突的备选名称：名称(2)、名称(3)...
+		QString altName;
+		int suffix = 2;
+		while (true) {
+			altName = QString("%1(%2)").arg(importName).arg(suffix);
+			if (!existingProfiles.contains(altName)) break;
+			suffix++;
+		}
+		
+		QMessageBox msgBox(this);
+		msgBox.setWindowTitle("导入配置");
+		msgBox.setIcon(QMessageBox::Question);
+		msgBox.setText(QString("方案「%1」已存在。\n\n请选择导入方式：").arg(importName));
+		
+		QPushButton *overwriteBtn = msgBox.addButton(
+			QString("覆盖「%1」").arg(importName), QMessageBox::AcceptRole);
+		QPushButton *renameBtn = msgBox.addButton(
+			QString("另存为「%1」").arg(altName), QMessageBox::ActionRole);
+		QPushButton *cancelBtn = msgBox.addButton("取消", QMessageBox::RejectRole);
+		
+		msgBox.exec();
+		
+		QAbstractButton *clicked = msgBox.clickedButton();
+		if (clicked == cancelBtn || clicked == nullptr) return;
+		
+		if (clicked == renameBtn) {
+			targetProfileName = altName;
+		}
+		// 覆盖模式：targetProfileName 保持为 importName
+	}
+	// ===== 情况 B：无冲突，直接导入为新方案（无需确认） =====
+	
+	plog(LOG_INFO, "Importing config as profile: %s (from file: %s)",
+		qUtf8Printable(targetProfileName), qUtf8Printable(filePath));
 	
 	// 屏蔽信号，避免导入过程中触发不必要的自动保存
 	ui->listWidget->blockSignals(true);
 	
-	// 收集现有 UUID（合并模式下用于去重）
-	QSet<QString> existingUUIDs;
-	if (!replace) {
-		for (int i = 0; i < ui->listWidget->count(); i++) {
-			existingUUIDs.insert(ui->listWidget->item(i)->data(HotkeyId).toString());
-		}
-	}
-	
-	if (replace) {
-		while (ui->listWidget->count() > 0) {
-			delete ui->listWidget->takeItem(0);
-		}
+	// 清空当前列表（导入始终为全量替换到目标方案）
+	while (ui->listWidget->count() > 0) {
+		delete ui->listWidget->takeItem(0);
 	}
 	
 	int imported = 0;
@@ -1220,10 +1255,8 @@ void ChapterHotkeyUI::importConfig(const QString &filePath)
 		QString color = markerObj["color"].toString();
 		
 		if (name.isEmpty()) continue;
-		// 合并模式下，如果 UUID 已存在则重新生成，避免热键 ID 冲突
-		if (uuid.isEmpty() || (!replace && existingUUIDs.contains(uuid))) {
-			uuid = "chapter_hotkey_" + QUuid::createUuid().toString(QUuid::WithoutBraces);
-		}
+		// 为每个标记重新生成 UUID，避免与现有方案的热键 ID 冲突
+		uuid = "chapter_hotkey_" + QUuid::createUuid().toString(QUuid::WithoutBraces);
 		
 		OBSDataArrayAutoRelease bindings = nullptr;
 		
@@ -1291,20 +1324,17 @@ void ChapterHotkeyUI::importConfig(const QString &filePath)
 			enableCommentsCheckBox->setChecked(g_enableComments);
 	}
 	
-	if (importObj.contains("profile")) {
-		currentProfileName = importObj["profile"].toString();
-	}
-	
 	ui->listWidget->sortItems();
 	
 	// 恢复信号
 	ui->listWidget->blockSignals(false);
 	
-	autoSaveCurrentProfile();
+	// 保存为目标方案并切换
+	currentProfileName = targetProfileName;
+	saveCurrentAsProfile(targetProfileName);
 	refreshProfileCombo();
 	
-	QMessageBox::information(this, "导入成功",
-		QString("已%1 %2 个标记。").arg(replace ? "导入" : "合并").arg(imported));
+	plog(LOG_INFO, "Imported %d markers into profile: %s", imported, qUtf8Printable(targetProfileName));
 }
 
 void ChapterHotkeyUI::onExportClicked()
