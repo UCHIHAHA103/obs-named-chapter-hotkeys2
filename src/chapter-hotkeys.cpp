@@ -129,7 +129,7 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 
 	QVBoxLayout *mainLayout = qobject_cast<QVBoxLayout *>(layout());
 	if (mainLayout) {
-		mainLayout->setSpacing(4);
+		mainLayout->setSpacing(2);
 		mainLayout->setContentsMargins(8, 8, 8, 8);
 		
 		// === 方案选择行（紧凑单行，无GroupBox） ===
@@ -159,7 +159,7 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		renameProfileBtn = new QPushButton(this);
 		renameProfileBtn->setToolTip("重命名方案");
 		renameProfileBtn->setFixedSize(26, 26);
-		renameProfileBtn->setIcon(QIcon(":/res/images/cogs.svg"));
+		renameProfileBtn->setIcon(QIcon(":/res/images/sources/text.svg"));
 		renameProfileBtn->setIconSize(QSize(14, 14));
 		profileLayout->addWidget(renameProfileBtn);
 		
@@ -197,7 +197,7 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		
 		QPushButton *renameBtn = new QPushButton(this);
 		renameBtn->setFixedSize(26, 26);
-		renameBtn->setIcon(QIcon(":/res/images/cogs.svg"));
+		renameBtn->setIcon(QIcon(":/res/images/sources/text.svg"));
 		renameBtn->setIconSize(QSize(14, 14));
 		renameBtn->setToolTip("重命名标记");
 		connect(renameBtn, &QPushButton::clicked, this, &ChapterHotkeyUI::on_actionRenameHotkey_triggered);
@@ -205,7 +205,7 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		
 		refreshHotkeysBtn = new QPushButton(this);
 		refreshHotkeysBtn->setFixedSize(26, 26);
-		refreshHotkeysBtn->setIcon(QIcon(":/res/images/revert.svg"));
+		refreshHotkeysBtn->setIcon(QIcon(":/res/images/refresh.svg"));
 		refreshHotkeysBtn->setIconSize(QSize(14, 14));
 		refreshHotkeysBtn->setToolTip("刷新快捷键显示");
 		toolColorLayout->addWidget(refreshHotkeysBtn);
@@ -266,7 +266,7 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		
 		QHBoxLayout *bottomLayout = new QHBoxLayout;
 		bottomLayout->setSpacing(6);
-		bottomLayout->setContentsMargins(0, 2, 0, 0);
+		bottomLayout->setContentsMargins(0, 0, 0, 0);
 		
 		// 注释复选框
 		enableCommentsCheckBox = new QCheckBox("注释", this);
@@ -427,29 +427,78 @@ void ChapterHotkeyUI::setSelectedItemColor(const QString &color)
 			hkItem->updateDisplayText();
 		}
 		
-		saveToExternalConfig();
 		autoSaveCurrentProfile();
 	}
 }
 
 // ============================================================================
-// 外部配置文件路径
+// 外部配置文件路径（已统一到 profiles 目录）
 // ============================================================================
 QString ChapterHotkeyUI::getExternalConfigPath()
 {
-	// 使用CEP扩展目录下的VideoMarkerExtractor_Data
-	QString cepPath = "C:\\Program Files (x86)\\Common Files\\Adobe\\CEP\\extensions\\VideoMarkerExtractor\\VideoMarkerExtractor_Data";
-	QDir cepDataDir(cepPath);
+	// 统一使用 profiles 目录，不再使用独立的 chapter-markers-config.json
+	// 返回当前活跃方案的文件路径
+	QString profileName = currentProfileName.isEmpty() ? QString::fromUtf8("预设") : currentProfileName;
+	QString configPath = getProfilesDir() + "/" + profileName + ".json";
+	return configPath;
+}
+
+// ============================================================================
+// 迁移旧版 chapter-markers-config.json 到 profiles/预设.json
+// ============================================================================
+void ChapterHotkeyUI::migrateOldConfig()
+{
+	QString oldConfigPath = "C:\\Program Files (x86)\\Common Files\\Adobe\\CEP\\extensions\\VideoMarkerExtractor\\VideoMarkerExtractor_Data\\chapter-markers-config.json";
+	QString newConfigPath = getProfilesDir() + "/" + QString::fromUtf8("预设") + ".json";
 	
-	// 如果目录不存在则创建
-	if (!cepDataDir.exists()) {
-		bool created = cepDataDir.mkpath(".");
-		plog(LOG_INFO, "Creating CEP config directory: %s, success: %d", qUtf8Printable(cepDataDir.path()), created);
+	// 如果旧配置文件存在且新预设文件不存在，执行迁移
+	if (QFile::exists(oldConfigPath) && !QFile::exists(newConfigPath)) {
+		QFile oldFile(oldConfigPath);
+		if (oldFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+			QByteArray data = oldFile.readAll();
+			oldFile.close();
+			
+			// 解析并升级格式
+			QJsonDocument doc = QJsonDocument::fromJson(data);
+			if (doc.isObject()) {
+				QJsonObject obj = doc.object();
+				obj["name"] = QString::fromUtf8("预设");
+				obj["version"] = "3.0";
+				if (!obj.contains("createdAt")) {
+					obj["createdAt"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+				}
+				
+				// 写入新位置
+				QFile newFile(newConfigPath);
+				if (newFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+					newFile.write(QJsonDocument(obj).toJson(QJsonDocument::Indented));
+					newFile.close();
+					plog(LOG_INFO, "Migrated old config to profiles/预设.json");
+				}
+			}
+			
+			// 删除旧文件
+			QFile::remove(oldConfigPath);
+			plog(LOG_INFO, "Removed old chapter-markers-config.json");
+		}
 	}
 	
-	QString configPath = cepDataDir.filePath("chapter-markers-config.json");
-	plog(LOG_INFO, "External config path: %s", qUtf8Printable(configPath));
-	return configPath;
+	// 确保预设文件始终存在（首次安装时创建空预设）
+	if (!QFile::exists(newConfigPath)) {
+		QJsonObject presetObj;
+		presetObj["name"] = QString::fromUtf8("预设");
+		presetObj["version"] = "3.0";
+		presetObj["enableComments"] = false;
+		presetObj["createdAt"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+		presetObj["markers"] = QJsonArray();
+		
+		QFile newFile(newConfigPath);
+		if (newFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+			newFile.write(QJsonDocument(presetObj).toJson(QJsonDocument::Indented));
+			newFile.close();
+			plog(LOG_INFO, "Created default preset file: profiles/预设.json");
+		}
+	}
 }
 
 // ============================================================================
@@ -470,169 +519,26 @@ QString ChapterHotkeyUI::getProfilesDir()
 // ============================================================================
 void ChapterHotkeyUI::saveToExternalConfig()
 {
-	QJsonArray markersArray;
-	
-	for (int i = 0; i < ui->listWidget->count(); i++) {
-		auto item = ui->listWidget->item(i);
-		
-		auto name = item->data(Name).toString();
-		auto uuid = item->data(HotkeyId).toString();
-		auto color = item->data(Color).toString();
-		OBSDataArrayAutoRelease bindings =
-			static_cast<obs_data_array_t *>(
-				item->data(Bindings).value<void *>());
-		
-		// 解析快捷键
-		QString hotkeyStr;
-		if (bindings) {
-			size_t count = obs_data_array_count(bindings);
-			if (count > 0) {
-				obs_data_t *binding = obs_data_array_item(bindings, 0);
-				if (binding) {
-					const char *key = obs_data_get_string(binding, "key");
-					bool shift = obs_data_get_bool(binding, "shift");
-					bool control = obs_data_get_bool(binding, "control");
-					bool alt = obs_data_get_bool(binding, "alt");
-					bool command = obs_data_get_bool(binding, "command");
-					
-					QStringList parts;
-					if (control) parts << "Ctrl";
-					if (shift) parts << "Shift";
-					if (alt) parts << "Alt";
-					if (command) parts << "Cmd";
-					if (key && *key) {
-						QString keyStr = QString(key).toUpper();
-						if (keyStr.startsWith("OBS_KEY_")) {
-							keyStr = keyStr.mid(8);
-						}
-						parts << keyStr;
-					}
-					
-					hotkeyStr = parts.join("+");
-					obs_data_release(binding);
-				}
-			}
-		}
-
-		// 外部配置文件不需要绑定信息，PR插件只需要名称和颜色
-		QJsonObject markerObj;
-		markerObj["name"] = name;
-		markerObj["uuid"] = uuid;
-		markerObj["color"] = color;
-		markerObj["hotkey"] = hotkeyStr;
-		
-		markersArray.append(markerObj);
+	// 配置已统一到 profiles 目录，直接保存到当前方案文件
+	if (currentProfileName.isEmpty()) {
+		currentProfileName = QString::fromUtf8("预设");
 	}
-	
-	QJsonObject configObj;
-	configObj["version"] = "2.0";
-	configObj["profile"] = currentProfileName;
-	configObj["enableComments"] = g_enableComments;
-	configObj["markers"] = markersArray;
-	
-	QJsonDocument doc(configObj);
-	QFile configFile(getExternalConfigPath());
-	if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-		configFile.write(doc.toJson(QJsonDocument::Indented));
-		configFile.close();
-		plog(LOG_INFO, "External config saved successfully to: %s", qUtf8Printable(configFile.fileName()));
-	} else {
-		plog(LOG_ERROR, "Failed to open config file for writing: %s", qUtf8Printable(configFile.fileName()));
-	}
+	saveCurrentAsProfile(currentProfileName);
 }
 
 void ChapterHotkeyUI::loadFromExternalConfig()
 {
-	QFile configFile(getExternalConfigPath());
-	if (!configFile.exists()) {
-		return;
+	// 执行旧版配置迁移
+	migrateOldConfig();
+	
+	// 默认加载"预设"方案
+	currentProfileName = QString::fromUtf8("预设");
+	QString presetPath = getProfilesDir() + "/" + currentProfileName + ".json";
+	
+	if (QFile::exists(presetPath)) {
+		loadProfile(currentProfileName);
 	}
 	
-	if (!configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-		return;
-	}
-	
-	QByteArray data = configFile.readAll();
-	configFile.close();
-	
-	QJsonDocument doc = QJsonDocument::fromJson(data);
-	if (doc.isNull() || !doc.isObject()) {
-		return;
-	}
-	
-	QJsonObject configObj = doc.object();
-	QString version = configObj["version"].toString();
-	if (version != "1.0" && version != "2.0") {
-		return;
-	}
-	
-	// 读取方案名
-	if (configObj.contains("profile")) {
-		currentProfileName = configObj["profile"].toString();
-	}
-	
-	QJsonArray markersArray = configObj["markers"].toArray();
-	
-	ui->listWidget->clear();
-	
-	for (int i = 0; i < markersArray.size(); i++) {
-		QJsonObject markerObj = markersArray[i].toObject();
-		QString name = markerObj["name"].toString();
-		QString uuid = markerObj["uuid"].toString();
-		QString color = markerObj["color"].toString();
-		QString hotkeyStr = markerObj["hotkey"].toString();
-		
-		if (name.isEmpty() || uuid.isEmpty()) continue;
-		
-		// 创建绑定数组
-		OBSDataArrayAutoRelease bindings = nullptr;
-		if (!hotkeyStr.isEmpty()) {
-			bindings = obs_data_array_create();
-			
-			OBSDataAutoRelease binding = obs_data_create();
-			
-			// 解析快捷键字符串
-			QStringList parts = hotkeyStr.split("+");
-			QString keyStr;
-			bool shift = false, control = false, alt = false, command = false;
-			
-			for (const QString &part : parts) {
-				QString p = part.trimmed().toUpper();
-				if (p == "CTRL" || p == "CONTROL") {
-					control = true;
-				} else if (p == "SHIFT") {
-					shift = true;
-				} else if (p == "ALT") {
-					alt = true;
-				} else if (p == "CMD" || p == "COMMAND") {
-					command = true;
-				} else {
-					// 键名
-					if (p.startsWith("NUM")) {
-						keyStr = "OBS_KEY_NUMPAD" + p.mid(3);
-					} else if (p.length() == 1) {
-						keyStr = "OBS_KEY_" + p;
-					} else {
-						keyStr = "OBS_KEY_" + p;
-					}
-				}
-			}
-			
-			obs_data_set_string(binding, "key", keyStr.toUtf8().constData());
-			obs_data_set_bool(binding, "shift", shift);
-			obs_data_set_bool(binding, "control", control);
-			obs_data_set_bool(binding, "alt", alt);
-			obs_data_set_bool(binding, "command", command);
-			
-			obs_data_array_push_back(bindings, binding);
-		}
-		
-		auto hkItem = new ChapterHotkeyItem(uuid, name.toUtf8().constData(), bindings, 
-			color.isEmpty() ? "#718637" : color);
-		ui->listWidget->addItem(hkItem);
-	}
-	
-	ui->listWidget->sortItems();
 	refreshProfileCombo();
 }
 
@@ -719,6 +625,13 @@ void ChapterHotkeyUI::saveCurrentAsProfile(const QString &profileName, const QSt
 		file.close();
 		currentProfileName = profileName;
 		plog(LOG_INFO, "Profile saved: %s", qUtf8Printable(profileName));
+		
+		// 保存活跃方案名，供 PR 插件读取
+		QFile activeFile(getProfilesDir() + "/_active.txt");
+		if (activeFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+			activeFile.write(profileName.toUtf8());
+			activeFile.close();
+		}
 	}
 }
 
@@ -836,7 +749,6 @@ void ChapterHotkeyUI::loadProfile(const QString &profileName)
 	ui->listWidget->blockSignals(false);
 	
 	currentProfileName = profileName;
-	saveToExternalConfig();
 	
 	plog(LOG_INFO, "Profile loaded: %s with %d markers", qUtf8Printable(profileName), ui->listWidget->count());
 }
@@ -870,17 +782,19 @@ void ChapterHotkeyUI::refreshProfileCombo()
 	
 	profileCombo->blockSignals(true);
 	profileCombo->clear();
-	profileCombo->addItem("-- 选择方案 --");
 	
 	QStringList profiles = getProfileNames();
 	for (const QString &p : profiles) {
 		profileCombo->addItem(p);
 	}
 	
-	// 选中当前方案
-	if (!currentProfileName.isEmpty()) {
-		int idx = profileCombo->findText(currentProfileName);
-		if (idx >= 0) profileCombo->setCurrentIndex(idx);
+	// 选中当前方案（默认"预设"）
+	QString targetProfile = currentProfileName.isEmpty() ? QString::fromUtf8("预设") : currentProfileName;
+	int idx = profileCombo->findText(targetProfile);
+	if (idx >= 0) {
+		profileCombo->setCurrentIndex(idx);
+	} else if (profileCombo->count() > 0) {
+		profileCombo->setCurrentIndex(0);
 	}
 	
 	profileCombo->blockSignals(false);
@@ -888,40 +802,53 @@ void ChapterHotkeyUI::refreshProfileCombo()
 
 void ChapterHotkeyUI::restoreProfileSelection()
 {
-	// 从外部配置文件读取上次选择的方案名
-	QFile configFile(getExternalConfigPath());
-	if (configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-		QJsonDocument cfgDoc = QJsonDocument::fromJson(configFile.readAll());
-		configFile.close();
-		if (cfgDoc.isObject()) {
-			QJsonObject cfgObj = cfgDoc.object();
-			if (cfgObj.contains("profile")) {
-				currentProfileName = cfgObj["profile"].toString();
-				plog(LOG_INFO, "Restored last profile selection: %s",
-					qUtf8Printable(currentProfileName));
-			}
+	// 如果当前没有设置方案名，默认使用"预设"
+	if (currentProfileName.isEmpty()) {
+		currentProfileName = QString::fromUtf8("预设");
+	}
+	
+	// 检查该方案文件是否存在
+	QString filePath = getProfilesDir() + "/" + currentProfileName + ".json";
+	if (!QFile::exists(filePath)) {
+		// 方案文件不存在，回退到"预设"
+		currentProfileName = QString::fromUtf8("预设");
+		plog(LOG_INFO, "Profile file not found, falling back to default preset");
+	}
+	
+	refreshProfileCombo();
+	
+	// 加载方案
+	if (!currentProfileName.isEmpty()) {
+		QString profilePath = getProfilesDir() + "/" + currentProfileName + ".json";
+		if (QFile::exists(profilePath)) {
+			loadProfile(currentProfileName);
 		}
 	}
-	refreshProfileCombo();
+	
+	plog(LOG_INFO, "Restored profile selection: %s", qUtf8Printable(currentProfileName));
 }
 
 void ChapterHotkeyUI::autoSaveCurrentProfile()
 {
-	// 如果当前没有选中方案，则不自动保存
-	if (currentProfileName.isEmpty()) return;
+	// 如果当前没有选中方案，默认保存到"预设"
+	if (currentProfileName.isEmpty()) {
+		currentProfileName = QString::fromUtf8("预设");
+	}
 	
 	saveCurrentAsProfile(currentProfileName);
-	saveToExternalConfig();
 	plog(LOG_INFO, "Auto-saved to profile: %s (%d markers)",
 		qUtf8Printable(currentProfileName), ui->listWidget->count());
 }
 
 void ChapterHotkeyUI::onProfileComboChanged(int index)
 {
-	if (index <= 0) return; // "-- 选择方案 --"
+	if (index < 0) return;
 	
 	QString profileName = profileCombo->currentText();
-	if (profileName.isEmpty() || profileName == "-- 选择方案 --") return;
+	if (profileName.isEmpty()) return;
+	
+	// 如果选中的就是当前方案，不重复加载
+	if (profileName == currentProfileName) return;
 	
 	// 直接加载方案，无需二次确认
 	loadProfile(profileName);
@@ -963,7 +890,7 @@ void ChapterHotkeyUI::onSaveProfileClicked()
 
 void ChapterHotkeyUI::onDeleteProfileClicked()
 {
-	if (profileCombo->currentIndex() <= 0) {
+	if (profileCombo->currentIndex() < 0 || profileCombo->currentText().isEmpty()) {
 		QMessageBox::warning(this, "提示", "请先选择要删除的方案。");
 		return;
 	}
@@ -975,13 +902,28 @@ void ChapterHotkeyUI::onDeleteProfileClicked()
 	
 	if (ret == QMessageBox::Yes) {
 		deleteProfile(name);
+		
+		// 删除后自动切换到其他方案
+		QStringList remaining = getProfileNames();
+		if (!remaining.isEmpty()) {
+			currentProfileName = remaining.first();
+			loadProfile(currentProfileName);
+		} else {
+			// 没有方案了，创建默认预设
+			currentProfileName = QString::fromUtf8("预设");
+			ui->listWidget->blockSignals(true);
+			while (ui->listWidget->count() > 0)
+				delete ui->listWidget->takeItem(0);
+			ui->listWidget->blockSignals(false);
+			saveCurrentAsProfile(currentProfileName);
+		}
 		refreshProfileCombo();
 	}
 }
 
 void ChapterHotkeyUI::onRenameProfileClicked()
 {
-	if (profileCombo->currentIndex() <= 0) {
+	if (profileCombo->currentIndex() < 0 || profileCombo->currentText().isEmpty()) {
 		QMessageBox::warning(this, "提示", "请先选择要重命名的方案。");
 		return;
 	}
@@ -1030,7 +972,6 @@ void ChapterHotkeyUI::onRenameProfileClicked()
 			currentProfileName = newName;
 		}
 		refreshProfileCombo();
-		saveToExternalConfig();
 		plog(LOG_INFO, "Profile renamed: %s -> %s", qUtf8Printable(oldName), qUtf8Printable(newName));
 	} else {
 		QMessageBox::warning(this, "重命名失败", "文件重命名失败，请检查文件权限。");
@@ -1057,9 +998,8 @@ void ChapterHotkeyUI::refreshAllHotkeyDisplays()
 		item->updateDisplayText();
 	}
 	
-	// 同步保存到当前方案和外部配置
+	// 同步保存到当前方案
 	autoSaveCurrentProfile();
-	saveToExternalConfig();
 }
 
 // ============================================================================
@@ -1366,7 +1306,7 @@ void ChapterHotkeyUI::importConfig(const QString &filePath)
 	// 恢复信号
 	ui->listWidget->blockSignals(false);
 	
-	saveToExternalConfig();
+	autoSaveCurrentProfile();
 	refreshProfileCombo();
 	
 	QMessageBox::information(this, "导入成功",
@@ -1375,10 +1315,7 @@ void ChapterHotkeyUI::importConfig(const QString &filePath)
 
 void ChapterHotkeyUI::onExportClicked()
 {
-	QString defaultName = "chapter-markers-config";
-	if (!currentProfileName.isEmpty()) {
-		defaultName = currentProfileName;
-	}
+	QString defaultName = currentProfileName.isEmpty() ? QString::fromUtf8("预设") : currentProfileName;
 	
 	QString filePath = QFileDialog::getSaveFileName(this,
 		"导出标记配置", defaultName + ".json",
@@ -1448,14 +1385,9 @@ void ChapterHotkeyUI::SaveHotkeys(obs_data_t *data)
 		obs_data_set_obj(data, uuid.toUtf8().constData(), hk);
 	}
 	
-	// 同时保存到外部配置文件供PR插件读取
-	saveToExternalConfig();
-	
 	// 同时保存到当前方案文件（确保 OBS 设置中修改的快捷键绑定也保存到方案）
-	if (!currentProfileName.isEmpty()) {
-		saveCurrentAsProfile(currentProfileName);
-		plog(LOG_INFO, "Profile also saved during OBS save: %s", qUtf8Printable(currentProfileName));
-	}
+	autoSaveCurrentProfile();
+	plog(LOG_INFO, "Profile also saved during OBS save: %s", qUtf8Printable(currentProfileName));
 }
 
 // ============================================================================
@@ -2347,19 +2279,33 @@ static void LoadSaveHotkeys(obs_data_t *save_data, bool saving, void *)
 		hk_edit->SaveHotkeys(obj);
 		obs_data_set_obj(save_data, "chapter_hotkeys", obj);
 		obs_data_set_bool(save_data, "enable_comments", g_enableComments);
-		plog(LOG_INFO, "Hotkeys saved, enableComments=%d", g_enableComments);
+		obs_data_set_string(save_data, "current_profile", 
+			hk_edit->getCurrentProfileName().toUtf8().constData());
+		plog(LOG_INFO, "Hotkeys saved, enableComments=%d, profile=%s", 
+			g_enableComments, qUtf8Printable(hk_edit->getCurrentProfileName()));
 	} else {
 		plog(LOG_INFO, "Loading hotkeys from OBS data...");
+		
+		// 先执行旧版配置文件迁移
+		hk_edit->migrateOldConfig();
+		
+		// 恢复上次选择的方案名
+		const char *savedProfile = obs_data_get_string(save_data, "current_profile");
+		if (savedProfile && *savedProfile) {
+			// 将在 restoreProfileSelection 中使用
+			hk_edit->setCurrentProfileName(QString::fromUtf8(savedProfile));
+		}
+		
 		OBSDataAutoRelease obj =
 			obs_data_get_obj(save_data, "chapter_hotkeys");
 		if (obj) {
 			hk_edit->LoadHotkeys(obj);
 			plog(LOG_INFO, "Hotkeys loaded from OBS internal config");
-			// 从外部配置文件恢复方案选择状态
+			// 恢复方案选择状态（默认"预设"）
 			hk_edit->restoreProfileSelection();
 		} else {
-			// 如果OBS内部配置不存在，尝试从外部配置文件加载
-			plog(LOG_INFO, "OBS internal config not found, loading from external config file");
+			// 如果OBS内部配置不存在，从默认预设方案加载
+			plog(LOG_INFO, "OBS internal config not found, loading from default preset");
 			hk_edit->loadFromExternalConfig();
 		}
 		g_enableComments = obs_data_get_bool(save_data, "enable_comments");

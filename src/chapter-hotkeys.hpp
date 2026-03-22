@@ -74,6 +74,7 @@ public:
 	void deleteProfile(const QString &profileName);
 	QStringList getProfileNames();
 	QString getCurrentProfileName() const { return currentProfileName; }
+	void setCurrentProfileName(const QString &name) { currentProfileName = name; }
 	
 	// 导入/导出
 	void exportConfig(const QString &filePath);
@@ -111,6 +112,7 @@ private:
 	void refreshProfileCombo();
 	void autoSaveCurrentProfile();
 	void refreshAllHotkeyDisplays();
+	void migrateOldConfig();
 	
 	QComboBox *profileCombo = nullptr;
 	QPushButton *saveProfileBtn = nullptr;
