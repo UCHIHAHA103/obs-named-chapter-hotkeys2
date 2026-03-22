@@ -444,60 +444,29 @@ QString ChapterHotkeyUI::getExternalConfigPath()
 }
 
 // ============================================================================
-// 迁移旧版 chapter-markers-config.json 到 profiles/预设.json
+// 确保 profiles 目录中至少有一个默认"预设"方案
 // ============================================================================
-void ChapterHotkeyUI::migrateOldConfig()
+void ChapterHotkeyUI::ensureDefaultPreset()
 {
-	QString oldConfigPath = "C:\\Program Files (x86)\\Common Files\\Adobe\\CEP\\extensions\\VideoMarkerExtractor\\VideoMarkerExtractor_Data\\chapter-markers-config.json";
-	QString newConfigPath = getProfilesDir() + "/" + QString::fromUtf8("预设") + ".json";
+	QString presetPath = getProfilesDir() + "/" + QString::fromUtf8("预设") + ".json";
 	
-	// 如果旧配置文件存在且新预设文件不存在，执行迁移
-	if (QFile::exists(oldConfigPath) && !QFile::exists(newConfigPath)) {
-		QFile oldFile(oldConfigPath);
-		if (oldFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-			QByteArray data = oldFile.readAll();
-			oldFile.close();
-			
-			// 解析并升级格式
-			QJsonDocument doc = QJsonDocument::fromJson(data);
-			if (doc.isObject()) {
-				QJsonObject obj = doc.object();
-				obj["name"] = QString::fromUtf8("预设");
-				obj["version"] = "3.0";
-				if (!obj.contains("createdAt")) {
-					obj["createdAt"] = QDateTime::currentDateTime().toString(Qt::ISODate);
-				}
-				
-				// 写入新位置
-				QFile newFile(newConfigPath);
-				if (newFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-					newFile.write(QJsonDocument(obj).toJson(QJsonDocument::Indented));
-					newFile.close();
-					plog(LOG_INFO, "Migrated old config to profiles/预设.json");
-				}
-			}
-			
-			// 删除旧文件
-			QFile::remove(oldConfigPath);
-			plog(LOG_INFO, "Removed old chapter-markers-config.json");
-		}
-	}
+	// 如果 profiles 目录里已经有方案文件，不需要创建默认预设
+	QStringList existing = getProfileNames();
+	if (!existing.isEmpty()) return;
 	
-	// 确保预设文件始终存在（首次安装时创建空预设）
-	if (!QFile::exists(newConfigPath)) {
-		QJsonObject presetObj;
-		presetObj["name"] = QString::fromUtf8("预设");
-		presetObj["version"] = "3.0";
-		presetObj["enableComments"] = false;
-		presetObj["createdAt"] = QDateTime::currentDateTime().toString(Qt::ISODate);
-		presetObj["markers"] = QJsonArray();
-		
-		QFile newFile(newConfigPath);
-		if (newFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-			newFile.write(QJsonDocument(presetObj).toJson(QJsonDocument::Indented));
-			newFile.close();
-			plog(LOG_INFO, "Created default preset file: profiles/预设.json");
-		}
+	// profiles 为空，创建默认"预设"
+	QJsonObject presetObj;
+	presetObj["name"] = QString::fromUtf8("预设");
+	presetObj["version"] = "3.0";
+	presetObj["enableComments"] = false;
+	presetObj["createdAt"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+	presetObj["markers"] = QJsonArray();
+	
+	QFile file(presetPath);
+	if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+		file.write(QJsonDocument(presetObj).toJson(QJsonDocument::Indented));
+		file.close();
+		plog(LOG_INFO, "Created default preset: profiles/预设.json");
 	}
 }
 
@@ -528,14 +497,18 @@ void ChapterHotkeyUI::saveToExternalConfig()
 
 void ChapterHotkeyUI::loadFromExternalConfig()
 {
-	// 执行旧版配置迁移
-	migrateOldConfig();
+	// 确保 profiles 目录中至少有一个默认方案
+	ensureDefaultPreset();
 	
-	// 默认加载"预设"方案
-	currentProfileName = QString::fromUtf8("预设");
-	QString presetPath = getProfilesDir() + "/" + currentProfileName + ".json";
-	
-	if (QFile::exists(presetPath)) {
+	// 扫描 profiles 目录，有文件就加载，没有就用刚创建的默认预设
+	QStringList profiles = getProfileNames();
+	if (!profiles.isEmpty()) {
+		// 优先加载"预设"，否则加载第一个
+		if (profiles.contains(QString::fromUtf8("预设"))) {
+			currentProfileName = QString::fromUtf8("预设");
+		} else {
+			currentProfileName = profiles.first();
+		}
 		loadProfile(currentProfileName);
 	}
 	
@@ -2286,8 +2259,8 @@ static void LoadSaveHotkeys(obs_data_t *save_data, bool saving, void *)
 	} else {
 		plog(LOG_INFO, "Loading hotkeys from OBS data...");
 		
-		// 先执行旧版配置文件迁移
-		hk_edit->migrateOldConfig();
+		// 确保 profiles 目录中至少有一个默认方案
+		hk_edit->ensureDefaultPreset();
 		
 		// 恢复上次选择的方案名
 		const char *savedProfile = obs_data_get_string(save_data, "current_profile");

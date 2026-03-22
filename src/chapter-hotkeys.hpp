@@ -79,6 +79,9 @@ public:
 	// 导入/导出
 	void exportConfig(const QString &filePath);
 	void importConfig(const QString &filePath);
+	
+	// 确保 profiles 目录中至少有一个默认"预设"方案
+	void ensureDefaultPreset();
 
 private slots:
 	void on_actionAddHotkey_triggered();
@@ -112,7 +115,6 @@ private:
 	void refreshProfileCombo();
 	void autoSaveCurrentProfile();
 	void refreshAllHotkeyDisplays();
-	void migrateOldConfig();
 	
 	QComboBox *profileCombo = nullptr;
 	QPushButton *saveProfileBtn = nullptr;
