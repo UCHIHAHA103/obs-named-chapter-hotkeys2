@@ -49,3 +49,11 @@ target_sources(
   ${CMAKE_PROJECT_NAME} PRIVATE src/external/qt-wrappers.hpp src/external/qt-wrappers.cpp)
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
+
+# ============================================================================
+# Optional: unit tests (only built when -DBUILD_TESTING=ON)
+# ============================================================================
+option(BUILD_TESTING "Build chapter-utils unit tests" OFF)
+if(BUILD_TESTING AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt)
+	add_subdirectory(tests)
+endif()

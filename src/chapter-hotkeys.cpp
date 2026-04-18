@@ -677,57 +677,40 @@ void ChapterHotkeyUI::loadProfile(const QString &profileName)
 	
 	// 加载时屏蔽 itemChanged 信号，避免触发不必要的自动保存
 	ui->listWidget->blockSignals(true);
-	
-	// 清空当前列表
-	// 注意：delete ChapterHotkeyItem 会 obs_hotkey_unregister 注销旧热键
-	while (ui->listWidget->count() > 0) {
-		delete ui->listWidget->takeItem(0);
-	}
-	
-	// 加载标记
-	for (int i = 0; i < markersArray.size(); i++) {
-		QJsonObject markerObj = markersArray[i].toObject();
-		QString name = markerObj["name"].toString();
-		QString uuid = markerObj["uuid"].toString();
-		QString color = markerObj["color"].toString();
-		
-		if (name.isEmpty()) continue;
-		if (uuid.isEmpty()) {
-			uuid = "chapter_hotkey_" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+
+	// 【优化】复用策略：按 UUID 匹配旧 item，避免频繁 obs_hotkey_unregister/register 带来的卡顿
+	// 1) 建立旧 UUID -> item 映射
+	QHash<QString, ChapterHotkeyItem *> oldByUuid;
+	oldByUuid.reserve(ui->listWidget->count());
+	for (int i = 0; i < ui->listWidget->count(); i++) {
+		if (auto *hk = dynamic_cast<ChapterHotkeyItem *>(ui->listWidget->item(i))) {
+			oldByUuid.insert(hk->getHotkeyUUID(), hk);
 		}
-		
-		OBSDataArrayAutoRelease bindings = nullptr;
-		
-		// 优先从完整的 bindings JSON 数组恢复（v3.0 格式）
+	}
+
+	// 辅助：从 markerObj 构造 bindings（v3 格式优先，v2 兼容）
+	auto makeBindings = [](const QJsonObject &markerObj) -> obs_data_array_t * {
+		obs_data_array_t *bindings = nullptr;
 		if (markerObj.contains("bindings") && markerObj["bindings"].isArray()) {
-			QJsonArray bindingsJsonArray = markerObj["bindings"].toArray();
-			if (!bindingsJsonArray.isEmpty()) {
+			QJsonArray arr = markerObj["bindings"].toArray();
+			if (!arr.isEmpty()) {
 				bindings = obs_data_array_create();
-				for (int j = 0; j < bindingsJsonArray.size(); j++) {
-					QJsonObject bindObj = bindingsJsonArray[j].toObject();
-					QJsonDocument bindDoc(bindObj);
-					QByteArray bindJson = bindDoc.toJson(QJsonDocument::Compact);
-					OBSDataAutoRelease binding = obs_data_create_from_json(bindJson.constData());
-					if (binding) {
-						obs_data_array_push_back(bindings, binding);
-					}
+				for (int j = 0; j < arr.size(); j++) {
+					QJsonDocument bd(arr[j].toObject());
+					QByteArray bj = bd.toJson(QJsonDocument::Compact);
+					OBSDataAutoRelease b = obs_data_create_from_json(bj.constData());
+					if (b) obs_data_array_push_back(bindings, b);
 				}
-				plog(LOG_INFO, "Marker '%s': restored %d bindings from profile data",
-					qUtf8Printable(name), (int)obs_data_array_count(bindings));
 			}
 		}
-		
-		// 回退：从旧版 hotkey 字符串解析（v2.0 兼容）
 		if (!bindings || obs_data_array_count(bindings) == 0) {
 			QString hotkeyStr = markerObj["hotkey"].toString();
 			if (!hotkeyStr.isEmpty() && hotkeyStr != "NONE") {
-				bindings = obs_data_array_create();
+				if (!bindings) bindings = obs_data_array_create();
 				OBSDataAutoRelease binding = obs_data_create();
-				
 				QStringList parts = hotkeyStr.split("+");
 				QString keyStr;
-				bool shift = false, control = false, alt = false, command = false;
-				
+				bool shift=false, control=false, alt=false, command=false;
 				for (const QString &part : parts) {
 					QString p = part.trimmed().toUpper();
 					if (p == "CTRL" || p == "CONTROL") control = true;
@@ -735,28 +718,69 @@ void ChapterHotkeyUI::loadProfile(const QString &profileName)
 					else if (p == "ALT") alt = true;
 					else if (p == "CMD" || p == "COMMAND") command = true;
 					else {
-						if (p.startsWith("NUM"))
-							keyStr = "OBS_KEY_NUMPAD" + p.mid(3);
-						else
-							keyStr = "OBS_KEY_" + p;
+						if (p.startsWith("NUM")) keyStr = "OBS_KEY_NUMPAD" + p.mid(3);
+						else                      keyStr = "OBS_KEY_" + p;
 					}
 				}
-				
 				obs_data_set_string(binding, "key", keyStr.toUtf8().constData());
 				obs_data_set_bool(binding, "shift", shift);
 				obs_data_set_bool(binding, "control", control);
 				obs_data_set_bool(binding, "alt", alt);
 				obs_data_set_bool(binding, "command", command);
 				obs_data_array_push_back(bindings, binding);
-				plog(LOG_INFO, "Marker '%s': parsed hotkey string '%s' (legacy format)",
-					qUtf8Printable(name), qUtf8Printable(hotkeyStr));
 			}
 		}
-		
-		auto hkItem = new ChapterHotkeyItem(uuid, name.toUtf8().constData(), bindings,
-			color.isEmpty() ? "#718637" : color);
-		ui->listWidget->addItem(hkItem);
+		return bindings;
+	};
+
+	// 2) 处理新方案中每个 marker：UUID 匹配就复用，否则新建
+	QSet<QString> seenUuids;
+	int reused = 0, created = 0;
+	for (int i = 0; i < markersArray.size(); i++) {
+		QJsonObject markerObj = markersArray[i].toObject();
+		QString name = markerObj["name"].toString();
+		QString uuid = markerObj["uuid"].toString();
+		QString color = markerObj["color"].toString();
+		if (name.isEmpty()) continue;
+		if (uuid.isEmpty()) {
+			uuid = "chapter_hotkey_" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+		}
+		seenUuids.insert(uuid);
+
+		OBSDataArrayAutoRelease bindings = makeBindings(markerObj);
+		QString finalColor = color.isEmpty() ? "#718637" : color;
+
+		auto it = oldByUuid.find(uuid);
+		if (it != oldByUuid.end()) {
+			// 复用：更新名称 / 颜色 / 绑定，不销毁也不重注册
+			ChapterHotkeyItem *hk = it.value();
+			hk->updateName(name);
+			hk->setColor(finalColor);
+			hk->applyBindings(bindings);
+			hk->updateDisplayText();
+			reused++;
+		} else {
+			// 新建
+			auto *hkItem = new ChapterHotkeyItem(uuid, name.toUtf8().constData(), bindings, finalColor);
+			ui->listWidget->addItem(hkItem);
+			created++;
+		}
 	}
+
+	// 3) 删除旧方案中存在但新方案中不存在的 item（触发其析构 -> obs_hotkey_unregister）
+	int removed = 0;
+	for (auto it = oldByUuid.begin(); it != oldByUuid.end(); ++it) {
+		if (!seenUuids.contains(it.key())) {
+			int row = ui->listWidget->row(it.value());
+			if (row >= 0) {
+				delete ui->listWidget->takeItem(row);
+				removed++;
+			}
+		}
+	}
+
+	plog(LOG_INFO, "loadProfile reuse stats: reused=%d, created=%d, removed=%d",
+		reused, created, removed);
 	
 	// 恢复注释开关
 	if (profileObj.contains("enableComments")) {
@@ -1546,6 +1570,21 @@ ChapterHotkeyItem::ChapterHotkeyItem(const QString &id, const char *name,
 ChapterHotkeyItem::~ChapterHotkeyItem()
 {
 	obs_hotkey_unregister(hotkey);
+}
+
+// 原地更新标记名：同步 chapterName + OBS 热键描述，不需要重新注册热键
+void ChapterHotkeyItem::updateName(const QString &newName)
+{
+	chapterName = newName.toStdString();
+	QString formatted = QString("添加章节标记 '%1'").arg(newName);
+	obs_hotkey_set_description(hotkey, formatted.toUtf8().constData());
+}
+
+// 原地重新加载热键绑定：复用已注册的 obs_hotkey_id
+void ChapterHotkeyItem::applyBindings(obs_data_array_t *bindings)
+{
+	// obs_hotkey_load 可传 nullptr 清空绑定
+	obs_hotkey_load(hotkey, bindings);
 }
 
 void ChapterHotkeyItem::updateDisplayText()
@@ -2398,6 +2437,17 @@ MarkerLivePanel::MarkerLivePanel(QWidget *parent)
 	copyBtn->setToolTip("复制标记摘要到剪贴板");
 	btnLayout->addWidget(copyBtn);
 	
+	// 导出按钮（下拉菜单支持多种格式）
+	exportBtn = new QPushButton("💾 导出", this);
+	exportBtn->setToolTip("将标记列表导出为 Markdown / CSV / Premiere XML / YouTube 章节");
+	QMenu *exportMenu = new QMenu(exportBtn);
+	exportMenu->addAction("Markdown (.md)",         [this]() { exportMarkers(ExportFormat::Markdown); });
+	exportMenu->addAction("CSV (.csv)",             [this]() { exportMarkers(ExportFormat::CSV); });
+	exportMenu->addAction("Premiere Pro XML (.xml)", [this]() { exportMarkers(ExportFormat::PremiereXML); });
+	exportMenu->addAction("YouTube 章节 (.txt)",    [this]() { exportMarkers(ExportFormat::YouTubeChapters); });
+	exportBtn->setMenu(exportMenu);
+	btnLayout->addWidget(exportBtn);
+	
 	mainLayout->addLayout(btnLayout);
 	
 	// 定时器 - 更新录制时间
@@ -2563,6 +2613,196 @@ void MarkerLivePanel::copyMarkersToClipboard()
 	}
 }
 
+// ============================================================================
+// Dock 面板导出：Markdown / CSV / Premiere Pro XML / YouTube 章节
+// ============================================================================
+
+// CSV 字段转义：双引号包裹 + 内部 " 转成 ""，换行替换为空格
+static QString csvEscape(const QString &field)
+{
+	QString s = field;
+	s.replace('\r', ' ').replace('\n', ' ');
+	bool needQuote = s.contains(',') || s.contains('"') || s.contains(';');
+	if (needQuote) {
+		s.replace('"', "\"\"");
+		return '"' + s + '"';
+	}
+	return s;
+}
+
+// XML 文本转义
+static QString xmlEscape(const QString &text)
+{
+	QString s = text;
+	s.replace('&', "&amp;")
+	 .replace('<', "&lt;")
+	 .replace('>', "&gt;")
+	 .replace('"', "&quot;")
+	 .replace('\'', "&apos;");
+	return s;
+}
+
+QString MarkerLivePanel::buildDefaultExportFileName(const QString &extension) const
+{
+	QString profile = hk_edit ? hk_edit->getCurrentProfileName() : QString();
+	if (profile.isEmpty())
+		profile = QString::fromUtf8("markers");
+	QString ts = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");
+	return QString("%1_%2.%3").arg(profile, ts, extension);
+}
+
+QString MarkerLivePanel::markersToMarkdown() const
+{
+	QString text;
+	text += QString("# 标记摘要  —  %1\n\n")
+		.arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss"));
+	text += QString("共 %1 条标记\n\n").arg(markers.size());
+	text += "| # | 时间码 | 名称 | 颜色 | 注释 |\n";
+	text += "|---|--------|------|------|------|\n";
+	for (const auto &m : markers) {
+		QString comment = m.comment;
+		comment.replace('|', "\\|").replace('\n', "<br>");
+		text += QString("| %1 | %2 | %3 | %4 | %5 |\n")
+			.arg(m.index)
+			.arg(m.timeCode)
+			.arg(m.name)
+			.arg(getColorName(m.color))
+			.arg(comment);
+	}
+	return text;
+}
+
+QString MarkerLivePanel::markersToCSV() const
+{
+	QString text;
+	// UTF-8 BOM 让 Excel 正确识别中文
+	text += QString::fromUtf8("\xEF\xBB\xBF");
+	text += "Index,TimeCode,TimestampMs,Name,Color,Comment\n";
+	for (const auto &m : markers) {
+		text += QString("%1,%2,%3,%4,%5,%6\n")
+			.arg(m.index)
+			.arg(m.timeCode)
+			.arg(m.timestampMs)
+			.arg(csvEscape(m.name))
+			.arg(csvEscape(getColorName(m.color)))
+			.arg(csvEscape(m.comment));
+	}
+	return text;
+}
+
+// Premiere Pro 可导入的 FCP7 XML（Final Cut Pro 7 XML Interchange Format）
+// Premiere 通过 文件 -> 导入 加载此 XML,标记会出现在源/节目监视器时间轴上
+QString MarkerLivePanel::markersToPremiereXML() const
+{
+	// 采用 30fps 时间基（通用默认，若用户录制帧率不同，标记时间会按比例换算仍有效）
+	constexpr int TIMEBASE = 30;
+	QString xml;
+	xml += "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+	xml += "<!DOCTYPE xmeml>\n";
+	xml += "<xmeml version=\"5\">\n";
+	xml += "  <sequence>\n";
+	xml += QString("    <name>%1</name>\n").arg(xmlEscape(buildDefaultExportFileName("").remove(QRegularExpression("\\.$"))));
+	xml += "    <rate>\n";
+	xml += QString("      <timebase>%1</timebase>\n").arg(TIMEBASE);
+	xml += "      <ntsc>FALSE</ntsc>\n";
+	xml += "    </rate>\n";
+	for (const auto &m : markers) {
+		qint64 frame = (qint64)(m.timestampMs / 1000.0 * TIMEBASE);
+		QString commentEsc = xmlEscape(m.comment);
+		QString nameEsc = xmlEscape(m.name);
+		xml += "    <marker>\n";
+		xml += QString("      <comment>%1</comment>\n").arg(commentEsc);
+		xml += QString("      <name>%1</name>\n").arg(nameEsc);
+		xml += QString("      <in>%1</in>\n").arg(frame);
+		xml += QString("      <out>%1</out>\n").arg(frame);
+		xml += "    </marker>\n";
+	}
+	xml += "  </sequence>\n";
+	xml += "</xmeml>\n";
+	return xml;
+}
+
+// YouTube / B 站章节格式：首行 0:00 + 逐行 mm:ss 或 hh:mm:ss 标题
+QString MarkerLivePanel::markersToYouTubeChapters() const
+{
+	QString text;
+	bool hasZero = false;
+	for (const auto &m : markers) {
+		if (m.timestampMs < 1000) { hasZero = true; break; }
+	}
+	if (!hasZero) {
+		text += "0:00 开始\n";
+	}
+	for (const auto &m : markers) {
+		// YouTube 要求 mm:ss，超过 1 小时用 hh:mm:ss
+		QString tc = m.timeCode;
+		if (tc.startsWith("00:")) {
+			tc = tc.mid(3); // 去掉 "00:" 前缀
+		}
+		QString line = m.name;
+		if (!m.comment.isEmpty()) {
+			line += " - " + m.comment.left(60);
+		}
+		line.replace('\n', ' ');
+		text += QString("%1 %2\n").arg(tc, line);
+	}
+	return text;
+}
+
+void MarkerLivePanel::exportMarkers(ExportFormat format)
+{
+	if (markers.isEmpty()) {
+		QMessageBox::information(this, QString::fromUtf8("无标记"),
+			QString::fromUtf8("当前没有可导出的标记。"));
+		return;
+	}
+
+	QString filter, ext, content;
+	switch (format) {
+	case ExportFormat::Markdown:
+		filter = "Markdown (*.md);;所有文件 (*.*)";
+		ext = "md";
+		content = markersToMarkdown();
+		break;
+	case ExportFormat::CSV:
+		filter = "CSV (*.csv);;所有文件 (*.*)";
+		ext = "csv";
+		content = markersToCSV();
+		break;
+	case ExportFormat::PremiereXML:
+		filter = "Premiere Pro XML (*.xml);;所有文件 (*.*)";
+		ext = "xml";
+		content = markersToPremiereXML();
+		break;
+	case ExportFormat::YouTubeChapters:
+		filter = "YouTube Chapters (*.txt);;所有文件 (*.*)";
+		ext = "txt";
+		content = markersToYouTubeChapters();
+		break;
+	}
+
+	QString defaultName = buildDefaultExportFileName(ext);
+	QString lastDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+	QString filePath = QFileDialog::getSaveFileName(this,
+		QString::fromUtf8("导出标记"),
+		lastDir + "/" + defaultName,
+		filter);
+	if (filePath.isEmpty())
+		return;
+
+	QFile file(filePath);
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+		QMessageBox::warning(this, QString::fromUtf8("导出失败"),
+			QString::fromUtf8("无法写入文件：\n%1").arg(filePath));
+		return;
+	}
+	file.write(content.toUtf8());
+	file.close();
+
+	plog(LOG_INFO, "Exported %d markers to %s", markers.size(), qUtf8Printable(filePath));
+	QMessageBox::information(this, QString::fromUtf8("导出成功"),
+		QString::fromUtf8("已导出 %1 条标记到:\n%2").arg(markers.size()).arg(filePath));
+}
 // ============================================================================
 // ScreenToast - 屏幕左上角淡出提示
 // 实现要点：

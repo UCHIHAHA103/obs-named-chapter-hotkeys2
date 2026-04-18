@@ -171,8 +171,14 @@ public:
 
 	obs_hotkey_id getHotkey() const { return hotkey; }
 	std::string getChapterName() const { return chapterName; }
+	QString getHotkeyUUID() const { return hotkeyUUID; }
 	QString getColor() const { return color; }
 	void setColor(const QString &newColor) { color = newColor; }
+
+	// 复用 item 用的更新方法：更新名称（同时更新 OBS 热键描述）
+	void updateName(const QString &newName);
+	// 复用 item 用的更新方法：重新加载 OBS 热键绑定
+	void applyBindings(obs_data_array_t *bindings);
  
 private:
 	obs_hotkey_id hotkey;
@@ -274,6 +280,16 @@ private:
 	QLabel *timerLabel;
 	QPushButton *clearBtn;
 	QPushButton *copyBtn;
+	QPushButton *exportBtn;
+
+	// 导出格式枚举
+	enum class ExportFormat { Markdown, CSV, PremiereXML, YouTubeChapters };
+	void exportMarkers(ExportFormat format);
+	QString buildDefaultExportFileName(const QString &extension) const;
+	QString markersToMarkdown() const;
+	QString markersToCSV() const;
+	QString markersToPremiereXML() const;
+	QString markersToYouTubeChapters() const;
 	
 	QList<LiveMarkerEntry> markers;
 	QTimer *recordingTimer;
