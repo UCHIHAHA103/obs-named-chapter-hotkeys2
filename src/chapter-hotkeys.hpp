@@ -54,6 +54,7 @@ public:
 	friend class ChapterWithCommentDialog;
 	
 	QCheckBox *enableCommentsCheckBox;
+	QCheckBox *enableScreenToastCheckBox;
 	ChapterHotkeyUI(QWidget *parent);
 
 	void ShowHideDialog();
@@ -282,4 +283,30 @@ private:
 	void refreshList();
 	QString formatTime(uint64_t ms) const;
 	void copyMarkersToClipboard();
+};
+
+// ============================================================================
+// 屏幕 Toast - 无边框透明悬浮窗,在主屏幕左上角显示一段文本后自动淡出
+// 不抢焦点、不影响游戏输入；用于按下标记热键后的视觉反馈
+// ============================================================================
+class ScreenToast : public QWidget {
+	Q_OBJECT
+public:
+	// 全局单例入口：在主屏左上角显示 message，持续 durationMs 后淡出
+	// 连续调用会复用同一窗口（替换文本，重置计时）
+	static void show(const QString &message, int durationMs = 1800);
+
+protected:
+	void paintEvent(QPaintEvent *event) override;
+
+private:
+	explicit ScreenToast();
+	void showMessage(const QString &message, int durationMs);
+	void updatePosition();
+	void startFadeOut();
+
+	QString m_text;
+	QTimer *m_hideTimer = nullptr;
+	QTimer *m_fadeTimer = nullptr;
+	double m_opacity = 0.95;
 };

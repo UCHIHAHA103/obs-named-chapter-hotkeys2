@@ -112,6 +112,7 @@ static QColor getColorFromHex(const QString &colorNameOrHex)
 ChapterHotkeyUI *hk_edit;
 MarkerLivePanel *g_livePanel = nullptr;
 bool g_enableComments = false;
+bool g_enableScreenToast = false;
 
 // 对话框重入保护：使用原子标志防止热键线程并发触发
 static std::atomic<bool> g_showDialogPending(false);
@@ -285,10 +286,22 @@ ChapterHotkeyUI::ChapterHotkeyUI(QWidget *parent)
 		// 注释复选框
 		enableCommentsCheckBox = new QCheckBox("注释", this);
 		enableCommentsCheckBox->setChecked(false);
-		connect(enableCommentsCheckBox, &QCheckBox::toggled, [](bool checked) {
+		connect(enableCommentsCheckBox, &QCheckBox::toggled, [this](bool checked) {
 			g_enableComments = checked;
+			autoSaveCurrentProfile();
 		});
 		bottomLayout->addWidget(enableCommentsCheckBox);
+		
+		// 屏幕反馈复选框：标记触发时在屏幕左上角显示 Toast 提示
+		enableScreenToastCheckBox = new QCheckBox("屏幕反馈", this);
+		enableScreenToastCheckBox->setChecked(false);
+		enableScreenToastCheckBox->setToolTip(
+			"按下标记热键时在屏幕左上角显示提示,便于在游戏中确认标记已记录");
+		connect(enableScreenToastCheckBox, &QCheckBox::toggled, [this](bool checked) {
+			g_enableScreenToast = checked;
+			autoSaveCurrentProfile();
+		});
+		bottomLayout->addWidget(enableScreenToastCheckBox);
 		
 		bottomLayout->addStretch();
 		
@@ -622,6 +635,7 @@ void ChapterHotkeyUI::saveCurrentAsProfile(const QString &profileName, const QSt
 	profileObj["description"] = description;
 	profileObj["version"] = "3.0";
 	profileObj["enableComments"] = g_enableComments;
+	profileObj["enableScreenToast"] = g_enableScreenToast;
 	profileObj["createdAt"] = QDateTime::currentDateTime().toString(Qt::ISODate);
 	profileObj["markers"] = markersArray;
 	
@@ -749,6 +763,13 @@ void ChapterHotkeyUI::loadProfile(const QString &profileName)
 		g_enableComments = profileObj["enableComments"].toBool();
 		if (enableCommentsCheckBox)
 			enableCommentsCheckBox->setChecked(g_enableComments);
+	}
+	
+	// 恢复屏幕反馈开关
+	if (profileObj.contains("enableScreenToast")) {
+		g_enableScreenToast = profileObj["enableScreenToast"].toBool();
+		if (enableScreenToastCheckBox)
+			enableScreenToastCheckBox->setChecked(g_enableScreenToast);
 	}
 	
 	ui->listWidget->sortItems();
@@ -1716,6 +1737,12 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id id,
 				}, Qt::QueuedConnection);
 			}
 			
+			// 屏幕反馈：开启后在屏幕左上角提示"已标记 xxx"
+			if (g_enableScreenToast) {
+				ScreenToast::show(QString::fromUtf8("已标记 \"%1\"")
+					.arg(QString::fromStdString(hk->getChapterName())));
+			}
+			
 			g_showDialogPending.store(false);
 			return;
 		}
@@ -1789,6 +1816,12 @@ static void ShowCommentDialog()
 				}
 			}, Qt::QueuedConnection);
 		}
+		
+		// 屏幕反馈：确认后提示"已标记 xxx"
+		if (g_enableScreenToast) {
+			ScreenToast::show(QString::fromUtf8("已标记 \"%1\"")
+				.arg(QString::fromStdString(nameInput)));
+		}
 	} else {
 		// 用户取消：创建标记 A2@###，表示这组标记需要被删除
 		plog(LOG_INFO, "Comment dialog cancelled for marker '%s'", nameInput.c_str());
@@ -1798,6 +1831,11 @@ static void ShowCommentDialog()
 			cancelChapterName = "(" + colorName.toStdString() + ") " + cancelChapterName;
 		}
 		obs_frontend_recording_add_chapter(cancelChapterName.c_str());
+		
+		// 屏幕反馈：取消时提示"已取消标记点"
+		if (g_enableScreenToast) {
+			ScreenToast::show(QString::fromUtf8("已取消标记点"));
+		}
 	}
 }
 
@@ -2526,6 +2564,119 @@ void MarkerLivePanel::copyMarkersToClipboard()
 }
 
 // ============================================================================
+// ScreenToast - 屏幕左上角淡出提示
+// 实现要点：
+// - 顶层窗口 + FramelessWindowHint + WindowStaysOnTopHint + Tool
+// - Qt::WA_ShowWithoutActivating 保证不抢输入焦点（全屏游戏仍可正常接收键鼠）
+// - Qt::WA_TransparentForMouseEvents 保证不会挡住/吃掉鼠标事件
+// - 单例复用：连续触发只更新文本并重置计时，避免频繁创建销毁
+// ============================================================================
+static ScreenToast *g_screenToast = nullptr;
+
+ScreenToast::ScreenToast() : QWidget(nullptr)
+{
+	// 关键窗口标志：无边框、置顶、工具窗口(不出现在任务栏)
+	setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool
+		| Qt::WindowDoesNotAcceptFocus);
+	// 透明背景（我们在 paintEvent 手绘圆角背景）
+	setAttribute(Qt::WA_TranslucentBackground);
+	// 显示时不激活 -> 不抢键盘焦点（游戏继续保持前台输入）
+	setAttribute(Qt::WA_ShowWithoutActivating);
+	// 鼠标事件穿透 -> 不遮挡游戏操作
+	setAttribute(Qt::WA_TransparentForMouseEvents);
+	setFocusPolicy(Qt::NoFocus);
+
+	m_hideTimer = new QTimer(this);
+	m_hideTimer->setSingleShot(true);
+	connect(m_hideTimer, &QTimer::timeout, this, &ScreenToast::startFadeOut);
+
+	m_fadeTimer = new QTimer(this);
+	m_fadeTimer->setInterval(25);
+	connect(m_fadeTimer, &QTimer::timeout, this, [this]() {
+		m_opacity -= 0.06;
+		if (m_opacity <= 0.0) {
+			m_opacity = 0.0;
+			m_fadeTimer->stop();
+			hide();
+		}
+		setWindowOpacity(m_opacity);
+	});
+}
+
+void ScreenToast::updatePosition()
+{
+	// 定位到主屏左上角，距离边缘 20px
+	QScreen *screen = QGuiApplication::primaryScreen();
+	if (!screen) return;
+	QRect avail = screen->availableGeometry();
+	// 根据文本重算尺寸
+	QFont f = font();
+	f.setPointSizeF(f.pointSizeF() * 1.3);
+	f.setBold(true);
+	QFontMetrics fm(f);
+	int textW = fm.horizontalAdvance(m_text);
+	int textH = fm.height();
+	const int paddingH = 18;
+	const int paddingV = 12;
+	int w = qMin(avail.width() - 40, textW + paddingH * 2);
+	int h = textH + paddingV * 2;
+	setFixedSize(w, h);
+	move(avail.x() + 20, avail.y() + 20);
+}
+
+void ScreenToast::paintEvent(QPaintEvent *)
+{
+	QPainter p(this);
+	p.setRenderHint(QPainter::Antialiasing);
+
+	// 半透明深色圆角背景
+	QRectF bg = rect().adjusted(1, 1, -1, -1);
+	p.setPen(QPen(QColor(255, 255, 255, 40), 1));
+	p.setBrush(QColor(20, 20, 20, 230));
+	p.drawRoundedRect(bg, 8, 8);
+
+	// 文本
+	QFont f = font();
+	f.setPointSizeF(f.pointSizeF() * 1.3);
+	f.setBold(true);
+	p.setFont(f);
+	p.setPen(QColor(255, 255, 255));
+	p.drawText(rect(), Qt::AlignCenter, m_text);
+}
+
+void ScreenToast::showMessage(const QString &message, int durationMs)
+{
+	m_text = message;
+	m_opacity = 0.95;
+	setWindowOpacity(m_opacity);
+	m_fadeTimer->stop();
+	updatePosition();
+	update();
+	if (!isVisible()) {
+		show();
+	} else {
+		raise();
+	}
+	m_hideTimer->start(durationMs);
+}
+
+void ScreenToast::startFadeOut()
+{
+	m_fadeTimer->start();
+}
+
+void ScreenToast::show(const QString &message, int durationMs)
+{
+	// 必须在 UI 线程执行
+	QMetaObject::invokeMethod(QCoreApplication::instance(), [message, durationMs]() {
+		if (!g_screenToast) {
+			g_screenToast = new ScreenToast();
+		}
+		g_screenToast->showMessage(message, durationMs);
+	}, Qt::QueuedConnection);
+}
+
+// ============================================================================
 // 插件初始化和保存回调
 // ============================================================================
 static void LoadSaveHotkeys(obs_data_t *save_data, bool saving, void *)
@@ -2536,6 +2687,7 @@ static void LoadSaveHotkeys(obs_data_t *save_data, bool saving, void *)
 		hk_edit->SaveHotkeys(obj);
 		obs_data_set_obj(save_data, "chapter_hotkeys", obj);
 		obs_data_set_bool(save_data, "enable_comments", g_enableComments);
+		obs_data_set_bool(save_data, "enable_screen_toast", g_enableScreenToast);
 		obs_data_set_string(save_data, "current_profile", 
 			hk_edit->getCurrentProfileName().toUtf8().constData());
 		plog(LOG_INFO, "Hotkeys saved, enableComments=%d, profile=%s", 
@@ -2568,6 +2720,10 @@ static void LoadSaveHotkeys(obs_data_t *save_data, bool saving, void *)
 		g_enableComments = obs_data_get_bool(save_data, "enable_comments");
 		if (hk_edit->enableCommentsCheckBox) {
 			hk_edit->enableCommentsCheckBox->setChecked(g_enableComments);
+		}
+		g_enableScreenToast = obs_data_get_bool(save_data, "enable_screen_toast");
+		if (hk_edit->enableScreenToastCheckBox) {
+			hk_edit->enableScreenToastCheckBox->setChecked(g_enableScreenToast);
 		}
 		plog(LOG_INFO, "Hotkeys load complete, enableComments=%d", g_enableComments);
 	}
