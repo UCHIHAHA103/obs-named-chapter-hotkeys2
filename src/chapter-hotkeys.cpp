@@ -1739,7 +1739,7 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id id,
 			
 			// 屏幕反馈：开启后在屏幕左上角提示"已标记 xxx"
 			if (g_enableScreenToast) {
-				ScreenToast::show(QString::fromUtf8("已标记 \"%1\"")
+				ScreenToast::showToast(QString::fromUtf8("已标记 \"%1\"")
 					.arg(QString::fromStdString(hk->getChapterName())));
 			}
 			
@@ -1819,7 +1819,7 @@ static void ShowCommentDialog()
 		
 		// 屏幕反馈：确认后提示"已标记 xxx"
 		if (g_enableScreenToast) {
-			ScreenToast::show(QString::fromUtf8("已标记 \"%1\"")
+			ScreenToast::showToast(QString::fromUtf8("已标记 \"%1\"")
 				.arg(QString::fromStdString(nameInput)));
 		}
 	} else {
@@ -1834,7 +1834,7 @@ static void ShowCommentDialog()
 		
 		// 屏幕反馈：取消时提示"已取消标记点"
 		if (g_enableScreenToast) {
-			ScreenToast::show(QString::fromUtf8("已取消标记点"));
+			ScreenToast::showToast(QString::fromUtf8("已取消标记点"));
 		}
 	}
 }
@@ -2665,7 +2665,7 @@ void ScreenToast::startFadeOut()
 	m_fadeTimer->start();
 }
 
-void ScreenToast::show(const QString &message, int durationMs)
+void ScreenToast::showToast(const QString &message, int durationMs)
 {
 	// 必须在 UI 线程执行
 	QMetaObject::invokeMethod(QCoreApplication::instance(), [message, durationMs]() {

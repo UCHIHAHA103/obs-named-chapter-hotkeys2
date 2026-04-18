@@ -294,7 +294,8 @@ class ScreenToast : public QWidget {
 public:
 	// 全局单例入口：在主屏左上角显示 message，持续 durationMs 后淡出
 	// 连续调用会复用同一窗口（替换文本，重置计时）
-	static void show(const QString &message, int durationMs = 1800);
+	// 注意：方法名避开基类 QWidget::show()，否则会隐藏基类重载
+	static void showToast(const QString &message, int durationMs = 1800);
 
 protected:
 	void paintEvent(QPaintEvent *event) override;
