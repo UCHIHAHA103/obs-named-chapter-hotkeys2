@@ -1722,8 +1722,8 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	setWindowModality(Qt::WindowModality::WindowModal);
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint | Qt::WindowStaysOnTopHint);
 	setMinimumWidth(280);
-	setMinimumHeight(130);
-	resize(280, 130);
+	setMinimumHeight(170);
+	resize(280, 170);
 
 	QVBoxLayout *layout = new QVBoxLayout;
 	setLayout(layout);
@@ -1749,11 +1749,10 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	layout->addWidget(commentLabel);
 
 	commentInput = new QTextEdit(this);
-	// 减半后的输入框：固定首选/最大高度为 30px(原 60px 的一半)，避免被 layout 拉高；
-	// 用户仍可手动拉大对话框，超出部分将用于扩展输入框
-	commentInput->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-	commentInput->setMinimumHeight(30);
-	commentInput->setMaximumHeight(30);
+	// 只让注释输入框参与垂直伸缩；标签/下拉/按钮行都是 Fixed 高度
+	// 初始最小高度给一个合理值(约两行文本),用户拖大窗口时该输入框独占剩余空间
+	commentInput->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+	commentInput->setMinimumHeight(40);
 	commentInput->installEventFilter(this);
 	layout->addWidget(commentInput, 1);
 
@@ -1973,13 +1972,7 @@ void ChapterWithCommentDialog::loadWindowState()
 	}
 
 	int finalWidth = qBound(280, savedWidth, 1200);
-	int finalHeight = qBound(130, savedHeight, 800);
-
-	// 【一次性迁移】旧版本对话框默认高度为 190，此次改版输入框减半后固定为 130；
-	// 若检测到老记忆尺寸（>160），强制收缩到新默认值，保证"减半"视觉生效
-	if (savedHeight > 160) {
-		finalHeight = 130;
-	}
+	int finalHeight = qBound(170, savedHeight, 800);
 
 	// 检查保存的位置是否在目标屏幕的可见区域内；若不在则夹取到该屏幕可用区域
 	QRect available = targetScreen->availableGeometry();
