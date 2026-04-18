@@ -1722,8 +1722,8 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	setWindowModality(Qt::WindowModality::WindowModal);
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint | Qt::WindowStaysOnTopHint);
 	setMinimumWidth(280);
-	setMinimumHeight(190);
-	resize(280, 190);
+	setMinimumHeight(160);
+	resize(280, 160);
 
 	QVBoxLayout *layout = new QVBoxLayout;
 	setLayout(layout);
@@ -1750,7 +1750,7 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 
 	commentInput = new QTextEdit(this);
 	commentInput->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
-	commentInput->setMinimumHeight(60);
+	commentInput->setMinimumHeight(30);
 	commentInput->setMaximumHeight(600);
 	commentInput->installEventFilter(this);
 	layout->addWidget(commentInput, 1);
@@ -1945,7 +1945,7 @@ void ChapterWithCommentDialog::loadWindowState()
 	}
 
 	int finalWidth = qBound(280, savedWidth, 1200);
-	int finalHeight = qBound(190, savedHeight, 800);
+	int finalHeight = qBound(160, savedHeight, 800);
 
 	// 检查保存的位置是否在目标屏幕的可见区域内；若不在则夹取到该屏幕可用区域
 	QRect available = targetScreen->availableGeometry();
@@ -2310,6 +2310,16 @@ void MarkerLivePanel::clearMarkers()
 {
 	markers.clear();
 	markerList->clear();
+
+	// 同步重置右上角时间码显示
+	// - 录制中：把计时基准点重置为当前时刻，从 00:00:00 重新开始
+	// - 未录制：直接归零显示
+	if (isRecording) {
+		recordingStartTime = QDateTime::currentMSecsSinceEpoch();
+	}
+	if (timerLabel) {
+		timerLabel->setText("00:00:00");
+	}
 }
 
 QString MarkerLivePanel::formatTime(uint64_t ms) const
