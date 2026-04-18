@@ -7,7 +7,6 @@
 !/cmake
 !/data
 !/src
-!/tests
 !.clang-format
 !.cmake-format.json
 !.gitignore
