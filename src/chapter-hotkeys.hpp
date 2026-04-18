@@ -193,6 +193,10 @@ protected:
 	void closeEvent(QCloseEvent *event) override;
 	bool eventFilter(QObject *obj, QEvent *event) override;
 
+public:
+	// 是否已从配置加载过历史位置（true 表示跳过自动居中）
+	bool hasRestoredPosition() const { return m_positionRestored; }
+
 private:
 	QLabel *nameLabel;
 	QLabel *commentLabel;
@@ -201,6 +205,7 @@ private:
 	void saveWindowState();
 	void loadWindowState();
 	
+	bool m_positionRestored = false;
 	static std::atomic<bool> s_isDialogOpen;
 	static QMutex s_dialogMutex;
 };

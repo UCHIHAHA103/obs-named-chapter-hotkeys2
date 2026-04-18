@@ -1721,7 +1721,7 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	setModal(true);
 	setWindowModality(Qt::WindowModality::WindowModal);
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint | Qt::WindowStaysOnTopHint);
-	setFixedWidth(280);
+	setMinimumWidth(280);
 	setMinimumHeight(190);
 	resize(280, 190);
 
@@ -1838,12 +1838,22 @@ void ChapterWithCommentDialog::saveWindowState()
 		configDir.mkpath(".");
 	}
 
+	// 使用 frameGeometry 获取包含窗口边框的位置，保证下次恢复时视觉位置一致
+	QRect frame = frameGeometry();
+
 	QJsonObject windowState;
-	windowState["x"] = x();
-	windowState["y"] = y();
+	windowState["x"] = frame.x();
+	windowState["y"] = frame.y();
+	windowState["width"] = width();
 	windowState["height"] = height();
+	// 记录当前所在显示器信息，便于多显示器场景下优先恢复到原显示器
 	if (screen()) {
 		windowState["screenName"] = screen()->name();
+		QRect sg = screen()->geometry();
+		windowState["screenX"] = sg.x();
+		windowState["screenY"] = sg.y();
+		windowState["screenWidth"] = sg.width();
+		windowState["screenHeight"] = sg.height();
 	}
 
 	QJsonObject root;
@@ -1853,6 +1863,9 @@ void ChapterWithCommentDialog::saveWindowState()
 	if (file.open(QIODevice::WriteOnly)) {
 		file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
 		file.close();
+		plog(LOG_INFO, "Comment dialog window state saved: pos=(%d,%d) size=%dx%d screen=%s",
+			frame.x(), frame.y(), width(), height(),
+			screen() ? qUtf8Printable(screen()->name()) : "unknown");
 	}
 }
 
@@ -1880,11 +1893,21 @@ void ChapterWithCommentDialog::loadWindowState()
 	QJsonObject windowState = root["commentDialog"].toObject();
 	int x = windowState.value("x").toInt(INT_MIN);
 	int y = windowState.value("y").toInt(INT_MIN);
-	int height = windowState.value("height").toInt(190);
+	int savedWidth = windowState.value("width").toInt(280);
+	int savedHeight = windowState.value("height").toInt(190);
 	QString screenName = windowState.value("screenName").toString();
+	int savedScreenX = windowState.value("screenX").toInt(INT_MIN);
+	int savedScreenY = windowState.value("screenY").toInt(INT_MIN);
 
-	// 找到对应的屏幕
+	// 没有有效位置，保持默认（后续 AskForNameAndComment 会居中）
+	if (x == INT_MIN || y == INT_MIN) {
+		return;
+	}
+
+	// ===== 多显示器支持：先按名字匹配，再按几何匹配，最后兜底到包含该点的屏幕 =====
 	QScreen *targetScreen = nullptr;
+
+	// 1) 按屏幕名字匹配（最准确）
 	if (!screenName.isEmpty()) {
 		for (QScreen *s : QGuiApplication::screens()) {
 			if (s->name() == screenName) {
@@ -1894,30 +1917,59 @@ void ChapterWithCommentDialog::loadWindowState()
 		}
 	}
 
-	// 如果没有找到目标屏幕，使用主屏幕
+	// 2) 按保存时的屏幕原点坐标匹配（名字变化时的兜底）
+	if (!targetScreen && savedScreenX != INT_MIN && savedScreenY != INT_MIN) {
+		for (QScreen *s : QGuiApplication::screens()) {
+			QRect sg = s->geometry();
+			if (sg.x() == savedScreenX && sg.y() == savedScreenY) {
+				targetScreen = s;
+				break;
+			}
+		}
+	}
+
+	// 3) 按窗口位置点查找包含它的屏幕
+	if (!targetScreen) {
+		QPoint center(x + savedWidth / 2, y + savedHeight / 2);
+		for (QScreen *s : QGuiApplication::screens()) {
+			if (s->geometry().contains(center)) {
+				targetScreen = s;
+				break;
+			}
+		}
+	}
+
+	// 4) 最终兜底：主屏幕
 	if (!targetScreen) {
 		targetScreen = QGuiApplication::primaryScreen();
 	}
 
-	// 恢复位置和尺寸
-	if (targetScreen) {
-		QRect screenGeometry = targetScreen->availableGeometry();
-		
-		// 设置最小高度和最大高度
-		int finalHeight = qBound(190, height, 600);
-		
-		// 确保窗口在屏幕范围内
-		if (x == INT_MIN || y == INT_MIN) {
-			// 第一次打开，居中显示
-			move(screenGeometry.center() - QPoint(140, finalHeight / 2));
-		} else {
-			// 恢复到之前的位置
-			move(x, y);
-		}
-		
-		// 设置高度
-		resize(280, finalHeight);
+	int finalWidth = qBound(280, savedWidth, 1200);
+	int finalHeight = qBound(190, savedHeight, 800);
+
+	// 检查保存的位置是否在目标屏幕的可见区域内；若不在则夹取到该屏幕可用区域
+	QRect available = targetScreen->availableGeometry();
+	QRect candidate(x, y, finalWidth, finalHeight);
+
+	// 允许窗口在屏幕上至少露出 60px 的标题栏区域，避免完全不可见
+	const int minVisible = 60;
+	if (candidate.right() < available.left() + minVisible ||
+	    candidate.left() > available.right() - minVisible ||
+	    candidate.bottom() < available.top() + minVisible ||
+	    candidate.top() > available.bottom() - minVisible) {
+		// 保存的位置完全不可见（例如显示器已拔掉），居中到目标屏幕
+		x = available.x() + (available.width() - finalWidth) / 2;
+		y = available.y() + (available.height() - finalHeight) / 2;
+		plog(LOG_INFO, "Saved position out of visible area, center to screen '%s'",
+			qUtf8Printable(targetScreen->name()));
 	}
+
+	resize(finalWidth, finalHeight);
+	move(x, y);
+	m_positionRestored = true;
+
+	plog(LOG_INFO, "Comment dialog window state restored: pos=(%d,%d) size=%dx%d screen=%s",
+		x, y, finalWidth, finalHeight, qUtf8Printable(targetScreen->name()));
 }
 
 static bool IsWhitespace(char ch)
@@ -1993,19 +2045,18 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 	
 	dialog.raise();
 
-	// 居中对话框
+	// 居中对话框（仅当未从历史配置恢复过位置时）
 	dialog.adjustSize(); // 确保布局完成
-	if (parent) {
-		QScreen *screen = parent->screen();
-		if (screen) {
-			QRect screenGeometry = screen->geometry();
-			dialog.move(screenGeometry.center() - QPoint(dialog.width() / 2, dialog.height() / 2));
+	if (!dialog.hasRestoredPosition()) {
+		QScreen *targetScreen = nullptr;
+		if (parent) {
+			targetScreen = parent->screen();
 		}
-	} else {
-		// 如果没有父窗口，使用主屏幕
-		QScreen *screen = QGuiApplication::primaryScreen();
-		if (screen) {
-			QRect screenGeometry = screen->geometry();
+		if (!targetScreen) {
+			targetScreen = QGuiApplication::primaryScreen();
+		}
+		if (targetScreen) {
+			QRect screenGeometry = targetScreen->availableGeometry();
 			dialog.move(screenGeometry.center() - QPoint(dialog.width() / 2, dialog.height() / 2));
 		}
 	}
