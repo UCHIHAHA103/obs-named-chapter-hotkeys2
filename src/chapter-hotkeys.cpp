@@ -1722,8 +1722,8 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	setWindowModality(Qt::WindowModality::WindowModal);
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint | Qt::WindowStaysOnTopHint);
 	setMinimumWidth(280);
-	setMinimumHeight(160);
-	resize(280, 160);
+	setMinimumHeight(130);
+	resize(280, 130);
 
 	QVBoxLayout *layout = new QVBoxLayout;
 	setLayout(layout);
@@ -1749,9 +1749,11 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	layout->addWidget(commentLabel);
 
 	commentInput = new QTextEdit(this);
-	commentInput->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+	// 减半后的输入框：固定首选/最大高度为 30px(原 60px 的一半)，避免被 layout 拉高；
+	// 用户仍可手动拉大对话框，超出部分将用于扩展输入框
+	commentInput->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
 	commentInput->setMinimumHeight(30);
-	commentInput->setMaximumHeight(600);
+	commentInput->setMaximumHeight(30);
 	commentInput->installEventFilter(this);
 	layout->addWidget(commentInput, 1);
 
@@ -1768,37 +1770,63 @@ ChapterWithCommentDialog::ChapterWithCommentDialog(QWidget *parent) : QDialog(pa
 	s_isDialogOpen.store(true);
 	loadWindowState();
 	
-	// 延迟设置焦点，确保对话框完全初始化并显示
-	QTimer::singleShot(100, this, [this]() {
+	// 【全屏游戏抢焦点】使用 AttachThreadInput 技巧，绕过 Windows 前台锁定机制，
+	// 不再模拟鼠标点击（会错误移动鼠标），也不依赖 SetForegroundWindow 单独调用（全屏独占时失败）
+	auto forceForegroundAndFocus = [this]() {
 #ifdef _WIN32
-		// 在全屏游戏时强制将窗口带到前台
 		HWND hwnd = reinterpret_cast<HWND>(winId());
-		if (hwnd) {
-			// 允许当前线程设置前台窗口
-			AllowSetForegroundWindow(ASFW_ANY);
-			// 强制将窗口带到前台
-			SetForegroundWindow(hwnd);
-			SetActiveWindow(hwnd);
-			
-			// 获取注释输入框的窗口句柄并模拟鼠标点击
-			HWND commentHwnd = reinterpret_cast<HWND>(commentInput->winId());
-			if (commentHwnd) {
-				// 获取输入框的中心位置
-				RECT rect;
-				GetWindowRect(commentHwnd, &rect);
-				int x = (rect.left + rect.right) / 2;
-				int y = (rect.top + rect.bottom) / 2;
-				
-				// 模拟鼠标点击
-				mouse_event(MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE, x * 65535 / GetSystemMetrics(SM_CXSCREEN), y * 65535 / GetSystemMetrics(SM_CYSCREEN), 0, 0);
-				mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
-				mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
-			}
+		if (!hwnd) return;
+
+		// 1) 先解除可能的最小化
+		if (IsIconic(hwnd)) {
+			ShowWindow(hwnd, SW_RESTORE);
+		}
+
+		// 2) 允许任意进程把我们带到前台（防止 SetForegroundWindow 被拒）
+		AllowSetForegroundWindow(ASFW_ANY);
+
+		// 3) AttachThreadInput：把当前线程的输入状态与前台线程"合并"，
+		//    这样 SetForegroundWindow/SetFocus 才能越过全屏独占窗口生效
+		HWND foreHwnd = GetForegroundWindow();
+		DWORD foreThread = GetWindowThreadProcessId(foreHwnd, nullptr);
+		DWORD curThread = GetCurrentThreadId();
+
+		bool attached = false;
+		if (foreThread && foreThread != curThread) {
+			attached = AttachThreadInput(foreThread, curThread, TRUE);
+		}
+
+		// 4) 强制置顶一瞬间（先 TOPMOST 再 NOTOPMOST 是抢焦点的经典技巧）
+		SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+			SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+		SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+			SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+
+		// 5) 真正把窗口+键盘焦点夺过来
+		BringWindowToTop(hwnd);
+		SetForegroundWindow(hwnd);
+		SetActiveWindow(hwnd);
+		SetFocus(hwnd);
+
+		// 6) 解除线程输入附加
+		if (attached) {
+			AttachThreadInput(foreThread, curThread, FALSE);
 		}
 #endif
-		commentInput->setFocus(Qt::PopupFocusReason);
-		commentInput->activateWindow();
-	});
+		// Qt 层面设置键盘焦点到注释输入框
+		activateWindow();
+		raise();
+		commentInput->setFocus(Qt::ActiveWindowFocusReason);
+	};
+
+	// 首次立即尝试（对普通窗口/无边框窗口通常一次就成功）
+	forceForegroundAndFocus();
+
+	// 全屏独占模式下系统需要时间处理窗口切换，在不同时间点重试以提高成功率
+	// 延迟：50ms(刚显示完) / 150ms(系统让位完成) / 350ms(游戏掉焦点后兜底)
+	QTimer::singleShot(50,  this, forceForegroundAndFocus);
+	QTimer::singleShot(150, this, forceForegroundAndFocus);
+	QTimer::singleShot(350, this, forceForegroundAndFocus);
 }
 
 ChapterWithCommentDialog::~ChapterWithCommentDialog()
@@ -1945,7 +1973,13 @@ void ChapterWithCommentDialog::loadWindowState()
 	}
 
 	int finalWidth = qBound(280, savedWidth, 1200);
-	int finalHeight = qBound(160, savedHeight, 800);
+	int finalHeight = qBound(130, savedHeight, 800);
+
+	// 【一次性迁移】旧版本对话框默认高度为 190，此次改版输入框减半后固定为 130；
+	// 若检测到老记忆尺寸（>160），强制收缩到新默认值，保证"减半"视觉生效
+	if (savedHeight > 160) {
+		finalHeight = 130;
+	}
 
 	// 检查保存的位置是否在目标屏幕的可见区域内；若不在则夹取到该屏幕可用区域
 	QRect available = targetScreen->availableGeometry();
