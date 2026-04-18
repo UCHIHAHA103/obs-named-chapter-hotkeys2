@@ -2072,9 +2072,10 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 	
 	dialog.raise();
 
-	// 居中对话框（仅当未从历史配置恢复过位置时）
-	dialog.adjustSize(); // 确保布局完成
+	// 仅当没有恢复到历史位置/尺寸时，才用 adjustSize() + 居中为默认姿态；
+	// 若已恢复历史 geometry，保持用户上次记忆的位置和高度，不要 adjustSize（它会覆盖为 sizeHint）
 	if (!dialog.hasRestoredPosition()) {
+		dialog.adjustSize(); // 确保布局完成
 		QScreen *targetScreen = nullptr;
 		if (parent) {
 			targetScreen = parent->screen();
