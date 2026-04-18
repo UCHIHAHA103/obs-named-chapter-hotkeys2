@@ -139,6 +139,17 @@ public:
 		       const QModelIndex &index) const override;
 };
 
+// 专用于注释弹窗下拉框的绘制代理：同样左对齐名称、右对齐灰色快捷键，但不绘制列表分隔线
+class ComboHotkeyItemDelegate : public QStyledItemDelegate {
+	Q_OBJECT
+public:
+	using QStyledItemDelegate::QStyledItemDelegate;
+	void paint(QPainter *painter, const QStyleOptionViewItem &option,
+		   const QModelIndex &index) const override;
+	QSize sizeHint(const QStyleOptionViewItem &option,
+		       const QModelIndex &index) const override;
+};
+
 enum HotkeyDataRoles { Name = Qt::UserRole, HotkeyId, Bindings, Color, HotkeyText };
 
 // ============================================================================

@@ -25,6 +25,7 @@
 #include <QPixmap>
 #include <QPainter>
 #include <QMap>
+#include <QHash>
 #include <QSet>
 #include <QMessageBox>
 #include <QTimer>
@@ -114,6 +115,18 @@ bool g_enableComments = false;
 
 // 对话框重入保护：使用原子标志防止热键线程并发触发
 static std::atomic<bool> g_showDialogPending(false);
+
+// 【新增】防御式节流：记录每个热键上次触发的时间戳，避免短时间内被错误重复触发
+// key: obs_hotkey_id, value: QDateTime::currentMSecsSinceEpoch()
+static QHash<obs_hotkey_id, qint64> g_lastHotkeyTriggerTime;
+static QMutex g_hotkeyTimeMutex;
+
+// 【新增】对话框关闭后的冷却期（毫秒）：期间忽略所有热键触发
+// 解决"ESC 关闭对话框后又立即弹出"类的误触发
+static std::atomic<qint64> g_dialogClosedAt(0);
+static constexpr qint64 kDialogClosedCooldownMs = 500;
+// 同一热键最小触发间隔（毫秒）：防连按/误触发
+static constexpr qint64 kHotkeyMinIntervalMs = 400;
 
 // ============================================================================
 // ChapterHotkeyUI 构造函数 - 增加配置方案UI和导入导出按钮
@@ -1083,6 +1096,70 @@ QSize HotkeyItemDelegate::sizeHint(const QStyleOptionViewItem &option,
 }
 
 // ============================================================================
+// ComboHotkeyItemDelegate - 注释弹窗下拉框：左对齐名称 + 右对齐灰色快捷键
+// 与 HotkeyItemDelegate 区别：不绘制列表分隔线（combo 下拉项不需要）
+// ============================================================================
+void ComboHotkeyItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
+				     const QModelIndex &index) const
+{
+	QStyleOptionViewItem opt = option;
+	initStyleOption(&opt, index);
+
+	QString hotkeyText = index.data(HotkeyText).toString();
+
+	painter->save();
+
+	QStyle *style = opt.widget ? opt.widget->style() : QApplication::style();
+	QString originalText = opt.text;
+	opt.text = QString();
+	style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, opt.widget);
+
+	QRect textRect = style->subElementRect(QStyle::SE_ItemViewItemText, &opt, opt.widget);
+	int padding = 4;
+	textRect.adjust(padding, 0, -padding, 0);
+
+	QPalette::ColorGroup cg = (opt.state & QStyle::State_Enabled)
+		? QPalette::Normal : QPalette::Disabled;
+	if (opt.state & QStyle::State_Selected) {
+		painter->setPen(opt.palette.color(cg, QPalette::HighlightedText));
+	} else {
+		painter->setPen(opt.palette.color(cg, QPalette::Text));
+	}
+
+	painter->setFont(opt.font);
+	painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, originalText);
+
+	if (!hotkeyText.isEmpty()) {
+		QString displayHotkey = "[" + hotkeyText + "]";
+
+		QFont hotkeyFont = opt.font;
+		hotkeyFont.setPointSizeF(hotkeyFont.pointSizeF() * 0.85);
+		painter->setFont(hotkeyFont);
+
+		if (opt.state & QStyle::State_Selected) {
+			QColor c = opt.palette.color(cg, QPalette::HighlightedText);
+			c.setAlpha(180);
+			painter->setPen(c);
+		} else {
+			painter->setPen(QColor(140, 140, 140));
+		}
+
+		painter->drawText(textRect, Qt::AlignRight | Qt::AlignVCenter, displayHotkey);
+	}
+
+	painter->restore();
+}
+
+QSize ComboHotkeyItemDelegate::sizeHint(const QStyleOptionViewItem &option,
+				         const QModelIndex &index) const
+{
+	QSize size = QStyledItemDelegate::sizeHint(option, index);
+	if (size.height() < 24)
+		size.setHeight(24);
+	return size;
+}
+
+// ============================================================================
 // 导入/导出功能
 // ============================================================================
 void ChapterHotkeyUI::exportConfig(const QString &filePath)
@@ -1539,7 +1616,7 @@ static void ShowCommentDialog();
 // ============================================================================
 // 热键按下处理 - 改进重入保护
 // ============================================================================
-void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
+void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id id,
 			      obs_hotkey_t *, bool pressed)
 {
 	auto hk = static_cast<ChapterHotkeyItem *>(_this);
@@ -1548,6 +1625,57 @@ void ChapterHotkeyItem::HotkeyPressed(void *_this, obs_hotkey_id,
 		// 检查OBS是否正在录制，只有在录制时才启用标记功能
 		if (!obs_frontend_recording_active()) {
 			return;
+		}
+		
+		// 【防护 1 - 绑定有效性检查】
+		// 如果当前热键没有实际绑定任何按键，直接忽略
+		// 防止 OBS 在某些情况下对无绑定热键误触发的情况
+		{
+			obs_data_array_t *bindings = obs_hotkey_save(hk->hotkey);
+			bool hasValidBinding = false;
+			if (bindings) {
+				size_t count = obs_data_array_count(bindings);
+				for (size_t i = 0; i < count; i++) {
+					obs_data_t *b = obs_data_array_item(bindings, i);
+					if (b) {
+						const char *key = obs_data_get_string(b, "key");
+						if (key && *key && strcmp(key, "OBS_KEY_NONE") != 0) {
+							hasValidBinding = true;
+						}
+						obs_data_release(b);
+					}
+					if (hasValidBinding) break;
+				}
+				obs_data_array_release(bindings);
+			}
+			if (!hasValidBinding) {
+				plog(LOG_INFO, "Hotkey ignored: no valid binding for '%s'",
+					hk->getChapterName().c_str());
+				return;
+			}
+		}
+		
+		// 【防护 2 - 对话框关闭冷却期】
+		// 对话框关闭后 500ms 内忽略所有热键，防止 ESC 关闭后立即被按键抖动再次触发
+		qint64 now = QDateTime::currentMSecsSinceEpoch();
+		qint64 closedAt = g_dialogClosedAt.load();
+		if (closedAt > 0 && (now - closedAt) < kDialogClosedCooldownMs) {
+			plog(LOG_INFO, "Hotkey ignored: within dialog-close cooldown (%lldms)",
+				(long long)(now - closedAt));
+			return;
+		}
+		
+		// 【防护 3 - 单键节流】
+		// 同一个热键 400ms 内只响应一次，防御按键重复/连击/OBS 误触发
+		{
+			QMutexLocker lock(&g_hotkeyTimeMutex);
+			qint64 last = g_lastHotkeyTriggerTime.value(id, 0);
+			if (last > 0 && (now - last) < kHotkeyMinIntervalMs) {
+				plog(LOG_INFO, "Hotkey throttled: last trigger %lldms ago",
+					(long long)(now - last));
+				return;
+			}
+			g_lastHotkeyTriggerTime[id] = now;
 		}
 		
 		// 【改进】使用原子标志进行严格的重入保护
@@ -1832,6 +1960,8 @@ ChapterWithCommentDialog::~ChapterWithCommentDialog()
 {
 	saveWindowState();
 	s_isDialogOpen.store(false);
+	// 记录关闭时间戳，用于热键触发冷却期判断（防 ESC 关闭后立即被再次触发）
+	g_dialogClosedAt.store(QDateTime::currentMSecsSinceEpoch());
 }
 
 void ChapterWithCommentDialog::closeEvent(QCloseEvent *event)
@@ -2030,12 +2160,17 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 	ChapterWithCommentDialog dialog(parent);
 	dialog.setWindowTitle(title);
 	
+	// 为下拉框安装自定义绘制代理：左对齐名称 + 右对齐灰色快捷键（与主列表风格一致）
+	dialog.nameCombo->setItemDelegate(new ComboHotkeyItemDelegate(dialog.nameCombo));
+	
 	// 添加带颜色圆点的标记名称到下拉框
 	if (hk_edit) {
 		for (int i = 0; i < hk_edit->ui->listWidget->count(); i++) {
 			auto item = hk_edit->ui->listWidget->item(i);
 			QString name = item->data(Name).toString();
 			QString color = item->data(Color).toString();
+			// 读取快捷键文本(与主列表共用 HotkeyText role),用于在下拉项右侧显示
+			QString hotkeyText = item->data(HotkeyText).toString();
 			if (!name.isEmpty()) {
 				// 创建彩色圆点图标
 				QIcon icon;
@@ -2054,6 +2189,8 @@ bool ChapterWithCommentDialog::AskForNameAndComment(QWidget *parent, const QStri
 				}
 				dialog.nameCombo->addItem(icon, name, name); // 设置原始名称为项数据
 				dialog.nameCombo->setItemData(dialog.nameCombo->count() - 1, color, Qt::UserRole + 1); // 存储颜色
+				// 存储快捷键文本，供 ComboHotkeyItemDelegate 绘制时读取
+				dialog.nameCombo->setItemData(dialog.nameCombo->count() - 1, hotkeyText, HotkeyText);
 			}
 		}
 	}
